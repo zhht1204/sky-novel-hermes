@@ -2,7 +2,7 @@ import cors from 'cors';
 import express from 'express';
 import { createServer } from 'node:http';
 import { mkdirSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { extname, join } from 'node:path';
 import pino from 'pino';
 import pinoHttp from 'pino-http';
 import { WebSocketServer } from 'ws';
@@ -18,7 +18,7 @@ import { DownloadManager } from './downloadManager.js';
 const startedAt = new Date().toISOString();
 const config = loadConfig();
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
-let settings: AppSettings = { storage: config.storage };
+let settings: AppSettings = { storage: config.storage, exportDir: config.exportDir };
 let db = await HermesDatabase.connect(settings.storage);
 const ai = createLiteLlmClientFromEnv();
 const downloads = new DownloadManager(db, getSite);
@@ -231,6 +231,7 @@ app.post('/api/export', async (req, res, next) => {
   try {
     const bookUrl = String(req.body.bookUrl);
     const format = String(req.body.format ?? 'markdown');
+    const exportDir = String(req.body.outputDir || settings.exportDir || config.exportDir);
     const book = (await db.listBooks()).find((candidate) => candidate.canonicalUrl === bookUrl || candidate.sourceUrl === bookUrl);
     if (!book) {
       res.status(404).json({ error: 'Book not found' });
@@ -238,18 +239,19 @@ app.post('/api/export', async (req, res, next) => {
     }
     const chapterRefs = await db.listChapters(bookUrl);
     const chapters = (await Promise.all(chapterRefs.map((chapter) => db.getChapter(chapter.sourceUrl)))).filter((chapter): chapter is ChapterContent => Boolean(chapter));
-    const baseName = safeFileName(book.title || 'novel');
+    const baseName = safeFileName(stripKnownExtension(String(req.body.fileName || book.title || 'novel')) || 'novel');
+    mkdirSync(exportDir, { recursive: true });
     if (format === 'zip') {
       const zip = await toZip({ [`${baseName}.md`]: toMarkdown(book, chapters), [`${baseName}.txt`]: toPlainText(book, chapters) });
-      const filePath = join(config.exportDir, `${baseName}.zip`);
+      const filePath = join(exportDir, `${baseName}.zip`);
       writeFileSync(filePath, zip);
-      res.json({ filePath });
+      res.json({ filePath, format, chapterCount: chapters.length });
       return;
     }
     const extension = format === 'txt' ? 'txt' : 'md';
-    const filePath = join(config.exportDir, `${baseName}.${extension}`);
+    const filePath = join(exportDir, `${baseName}.${extension}`);
     writeFileSync(filePath, extension === 'txt' ? toPlainText(book, chapters) : toMarkdown(book, chapters), 'utf8');
-    res.json({ filePath });
+    res.json({ filePath, format: extension === 'txt' ? 'txt' : 'markdown', chapterCount: chapters.length });
   } catch (error) {
     next(error);
   }
@@ -295,5 +297,10 @@ function normalizeSettings(input: unknown): AppSettings {
   if (backend === 'postgres' && !postgresUrl) {
     throw new Error('PostgreSQL connection URL is required');
   }
-  return { storage: { backend, sqlitePath, postgresUrl } };
+  return { storage: { backend, sqlitePath, postgresUrl }, exportDir: body?.exportDir || settings.exportDir };
+}
+
+function stripKnownExtension(fileName: string): string {
+  const extension = extname(fileName).toLowerCase();
+  return ['.txt', '.md', '.markdown', '.zip'].includes(extension) ? fileName.slice(0, -extension.length) : fileName;
 }

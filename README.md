@@ -21,6 +21,8 @@ pnpm dev
 
 The Node service stores cached metadata, catalogs, chapter content, and download tasks through a selectable storage backend. SQLite is the default and writes to `./storage/hermes.sqlite`. PostgreSQL can be enabled in the app Settings page, or by setting `HERMES_STORAGE_BACKEND=postgres` with `HERMES_DATABASE_URL` or `DATABASE_URL`. The service creates the required tables on startup.
 
+Downloaded novel content is stored as structured chapter records in the selected backend. Each chapter can keep plain text and HTML, which makes the database the canonical cache while TXT, Markdown, ZIP, and future EPUB/PDF files are generated as export artifacts. The Packaging page lets you choose the book, export format, output directory, and file name at export time; Settings controls the default export directory.
+
 `pnpm dev` runs the Node service and Tauri desktop app in parallel. You can also run them in two terminals when debugging one side at a time:
 
 ```powershell

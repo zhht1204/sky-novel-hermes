@@ -1,7 +1,7 @@
 import { Archive, BookOpen, Download, Eye, Home, Package, Search, Settings, Sparkles } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { apiGet, apiPost, serviceWsUrl } from '../api.js';
-import type { AggregatedSearchResponse, BookInfo, ChapterContent, ChapterRef, DownloadTask, ServiceSettings, SiteSearchResultGroup, SiteSummary, UrlImportResponse } from '../types.js';
+import type { AggregatedSearchResponse, BookInfo, ChapterContent, ChapterRef, DownloadTask, ExportResponse, ServiceSettings, SiteSearchResultGroup, SiteSummary, UrlImportResponse } from '../types.js';
 
 const sampleUrl = 'https://big5.quanben5.io/n/moshi_wodunliaoyiwanwuzi/xiaoshuo.html';
 const nav = [
@@ -102,7 +102,7 @@ export function App() {
         {active === 'search' && <SearchView sites={sites} selectedBookUrl={selectedBookUrl} setSelectedBookUrl={setSelectedBookUrl} onImportUrl={importUrl} onDownload={startDownload} />}
         {active === 'downloads' && <DownloadsView tasks={tasks} />}
         {active === 'library' && <LibraryView books={books} setSelectedBookUrl={setSelectedBookUrl} setActive={setActive} />}
-        {active === 'package' && <PackageView selectedBookUrl={selectedBookUrl} />}
+        {active === 'package' && <PackageView books={books} selectedBookUrl={selectedBookUrl} setSelectedBookUrl={setSelectedBookUrl} />}
         {active === 'preview' && <PreviewView book={selectedBook} chapters={chapters} />}
         {active === 'settings' && <SettingsView />}
       </section>
@@ -170,14 +170,30 @@ function LibraryView({ books, setSelectedBookUrl, setActive }: { books: BookInfo
   return <section className="panel"><h2>本地书库</h2><table><thead><tr><th>书名</th><th>作者</th><th>分类</th><th>状态</th></tr></thead><tbody>{books.map((book) => <tr key={book.canonicalUrl} onClick={() => { setSelectedBookUrl(book.canonicalUrl); setActive('preview'); }}><td>{book.title}</td><td>{book.author}</td><td>{book.category}</td><td>{book.status}</td></tr>)}</tbody></table></section>;
 }
 
-function PackageView({ selectedBookUrl }: { selectedBookUrl: string }) {
+function PackageView({ books, selectedBookUrl, setSelectedBookUrl }: { books: BookInfo[]; selectedBookUrl: string; setSelectedBookUrl: (value: string) => void }) {
   const [format, setFormat] = useState('markdown');
+  const [outputDir, setOutputDir] = useState('');
+  const [fileName, setFileName] = useState('');
   const [result, setResult] = useState('');
+
+  const selectedBook = books.find((book) => book.canonicalUrl === selectedBookUrl || book.sourceUrl === selectedBookUrl);
+
+  useEffect(() => {
+    apiGet<ServiceSettings>('/api/settings').then((settings) => setOutputDir((current) => current || settings.exportDir)).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (selectedBook && !fileName) {
+      setFileName(selectedBook.title);
+    }
+  }, [selectedBook?.canonicalUrl]);
+
   async function exportBook() {
-    const response = await apiPost<{ filePath: string }>('/api/export', { bookUrl: selectedBookUrl, format });
-    setResult(response.filePath);
+    const response = await apiPost<ExportResponse>('/api/export', { bookUrl: selectedBookUrl, format, outputDir, fileName });
+    setResult(`${response.filePath} (${response.chapterCount} 章)`);
   }
-  return <section className="panel"><h2>导出</h2><div className="formRow"><select value={format} onChange={(event) => setFormat(event.target.value)}><option value="markdown">Markdown</option><option value="txt">TXT</option><option value="zip">ZIP</option></select><button className="primary" onClick={exportBook}>导出</button></div><p>{result}</p></section>;
+
+  return <section className="panel"><h2>导出</h2><div className="exportGrid"><label><span>书籍</span><select value={selectedBookUrl} onChange={(event) => { setSelectedBookUrl(event.target.value); setFileName(''); }}>{books.map((book) => <option key={book.canonicalUrl} value={book.canonicalUrl}>{book.title}</option>)}</select></label><label><span>格式</span><select value={format} onChange={(event) => setFormat(event.target.value)}><option value="markdown">Markdown</option><option value="txt">TXT</option><option value="zip">ZIP: Markdown + TXT</option></select></label><label><span>导出目录</span><input value={outputDir} onChange={(event) => setOutputDir(event.target.value)} placeholder="./exports" /></label><label><span>文件名</span><input value={fileName} onChange={(event) => setFileName(event.target.value)} placeholder={selectedBook?.title ?? 'novel'} /></label></div><div className="formRow"><button className="primary" onClick={exportBook} disabled={!selectedBookUrl || books.length === 0}>导出文件</button><span>{selectedBook ? `${selectedBook.author ?? '未知作者'} · ${selectedBook.category ?? '未分类'}` : '未选择书籍'}</span></div><p>{result || '下载内容保存在当前存储后端，导出时按这里的格式和路径生成文件。'}</p></section>;
 }
 
 function PreviewView({ book, chapters }: { book?: BookInfo; chapters: ChapterRef[] }) {
@@ -208,5 +224,5 @@ function SettingsView() {
 
   if (!settings) return <section className="panel"><h2>服务设置</h2><p>{message || '正在读取设置...'}</p></section>;
 
-  return <section className="panel"><h2>服务设置</h2><div className="settingsGrid"><label><span>存储后端</span><select value={settings.storage.backend} onChange={(event) => setSettings({ ...settings, storage: { ...settings.storage, backend: event.target.value === 'postgres' ? 'postgres' : 'sqlite' } })}><option value="sqlite">SQLite 本地文件</option><option value="postgres">PostgreSQL 数据库</option></select></label><label><span>SQLite 文件</span><input value={settings.storage.sqlitePath ?? ''} onChange={(event) => setSettings({ ...settings, storage: { ...settings.storage, sqlitePath: event.target.value } })} /></label><label><span>PostgreSQL URL</span><input value={settings.storage.postgresUrl ?? ''} onChange={(event) => setSettings({ ...settings, storage: { ...settings.storage, postgresUrl: event.target.value } })} placeholder="postgres://user:password@host:5432/database" /></label></div><div className="formRow"><button className="primary" onClick={save}>保存存储设置</button><span>当前：{settings.activeStorageBackend === 'postgres' ? 'PostgreSQL' : 'SQLite'}</span></div><p>{message || '元数据、目录缓存、章节缓存和下载任务会写入所选后端。'}</p><p>AI 接入通过外部 LiteLLM/OpenAI-compatible API 环境变量配置。</p></section>;
+  return <section className="panel"><h2>服务设置</h2><div className="settingsGrid"><label><span>存储后端</span><select value={settings.storage.backend} onChange={(event) => setSettings({ ...settings, storage: { ...settings.storage, backend: event.target.value === 'postgres' ? 'postgres' : 'sqlite' } })}><option value="sqlite">SQLite 本地文件</option><option value="postgres">PostgreSQL 数据库</option></select></label><label><span>SQLite 文件</span><input value={settings.storage.sqlitePath ?? ''} onChange={(event) => setSettings({ ...settings, storage: { ...settings.storage, sqlitePath: event.target.value } })} /></label><label><span>PostgreSQL URL</span><input value={settings.storage.postgresUrl ?? ''} onChange={(event) => setSettings({ ...settings, storage: { ...settings.storage, postgresUrl: event.target.value } })} placeholder="postgres://user:password@host:5432/database" /></label><label><span>默认导出目录</span><input value={settings.exportDir} onChange={(event) => setSettings({ ...settings, exportDir: event.target.value })} placeholder="./exports" /></label></div><div className="formRow"><button className="primary" onClick={save}>保存设置</button><span>当前：{settings.activeStorageBackend === 'postgres' ? 'PostgreSQL' : 'SQLite'}</span></div><p>{message || '元数据、目录缓存、章节缓存和下载任务会写入所选后端。'}</p><p>AI 接入通过外部 LiteLLM/OpenAI-compatible API 环境变量配置。</p></section>;
 }

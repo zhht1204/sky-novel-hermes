@@ -68,7 +68,14 @@ export interface ServiceSettings {
     sqlitePath?: string;
     postgresUrl?: string;
   };
+  exportDir: string;
   activeStorageBackend?: StorageBackend;
+}
+
+export interface ExportResponse {
+  filePath: string;
+  format: string;
+  chapterCount: number;
 }
 
 export interface DownloadTask {

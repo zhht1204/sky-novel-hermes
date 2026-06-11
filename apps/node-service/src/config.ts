@@ -13,6 +13,7 @@ export interface ServiceConfig {
 
 export interface AppSettings {
   storage: HermesDatabaseOptions;
+  exportDir: string;
 }
 
 export function loadConfig(): ServiceConfig {
@@ -23,7 +24,7 @@ export function loadConfig(): ServiceConfig {
     host: process.env.HERMES_SERVICE_HOST ?? '127.0.0.1',
     port: Number(process.env.HERMES_SERVICE_PORT ?? 17891),
     dataDir,
-    exportDir: process.env.HERMES_EXPORT_DIR ?? './exports',
+    exportDir: settings.exportDir,
     settingsPath,
     storage: settings.storage,
   };
@@ -36,6 +37,7 @@ export function loadSettings(settingsPath: string, dataDir = './storage'): AppSe
   const backend = envBackend ?? saved.storage?.backend ?? (envPostgresUrl ? 'postgres' : 'sqlite');
 
   return {
+    exportDir: process.env.HERMES_EXPORT_DIR ?? saved.exportDir ?? './exports',
     storage: {
       backend,
       sqlitePath: process.env.HERMES_SQLITE_PATH ?? saved.storage?.sqlitePath ?? join(dataDir, 'hermes.sqlite'),
