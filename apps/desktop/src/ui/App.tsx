@@ -1,14 +1,15 @@
-import { Archive, BookOpen, BrainCircuit, Download, Eye, Home, Languages, Package, Pause, Play, RotateCcw, Search, Settings, Trash2, X } from 'lucide-react';
+import { Archive, BookOpen, BrainCircuit, ClipboardCheck, Download, Eye, Home, Languages, Package, Pause, Play, RotateCcw, Search, Settings, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { MouseEvent } from 'react';
 import { ApiError, apiDelete, apiGet, apiPost, serviceUrl, serviceWsUrl } from '../api.js';
-import type { AggregatedSearchResponse, AiUsageRecord, AiUsageSummary, BookInfo, ChapterContent, ChapterRef, ChapterTranslation, DownloadFailure, DownloadTask, ExportResponse, ImportConflictResponse, LanguageProfile, ServiceSettings, SiteSearchResultGroup, SiteSummary, TranslationFailure, TranslationTask, UrlImportResponse } from '../types.js';
+import type { AggregatedSearchResponse, AiUsageRecord, AiUsageSummary, BookInfo, ChapterContent, ChapterProofread, ChapterRef, ChapterTranslation, DownloadFailure, DownloadTask, ExportResponse, ImportConflictResponse, LanguageProfile, ProofreadFailure, ProofreadTask, ServiceSettings, SiteSearchResultGroup, SiteSummary, TranslationFailure, TranslationTask, UrlImportResponse } from '../types.js';
 
 const nav = [
   { id: 'home', label: '主页', icon: Home },
   { id: 'search', label: '搜索', icon: Search },
   { id: 'downloads', label: '下载管理', icon: Download },
   { id: 'translations', label: '多语言处理', icon: Languages },
+  { id: 'proofreads', label: '内容校对', icon: ClipboardCheck },
   { id: 'library', label: '已下载内容', icon: Archive },
   { id: 'package', label: '打包压缩', icon: Package },
   { id: 'preview', label: '预览', icon: Eye },
@@ -22,20 +23,23 @@ export function App() {
   const [books, setBooks] = useState<BookInfo[]>([]);
   const [tasks, setTasks] = useState<DownloadTask[]>([]);
   const [translationTasks, setTranslationTasks] = useState<TranslationTask[]>([]);
+  const [proofreadTasks, setProofreadTasks] = useState<ProofreadTask[]>([]);
   const [chapters, setChapters] = useState<ChapterRef[]>([]);
   const [selectedBookUrl, setSelectedBookUrl] = useState('');
   const [message, setMessage] = useState('');
 
   async function refresh() {
-    const [siteList, taskList, translationTaskList, bookList] = await Promise.all([
+    const [siteList, taskList, translationTaskList, proofreadTaskList, bookList] = await Promise.all([
       apiGet<SiteSummary[]>('/api/sites'),
       apiGet<DownloadTask[]>('/api/downloads'),
       apiGet<TranslationTask[]>('/api/translations/tasks'),
+      apiGet<ProofreadTask[]>('/api/proofreads/tasks'),
       apiGet<BookInfo[]>('/api/library/books'),
     ]);
     setSites(siteList);
     setTasks(taskList);
     setTranslationTasks(translationTaskList);
+    setProofreadTasks(proofreadTaskList);
     setBooks(bookList);
     setMessage('');
   }
@@ -59,6 +63,9 @@ export function App() {
       }
       if (payload.type === 'translation-task') {
         setTranslationTasks((current) => [payload.task, ...current.filter((task) => task.id !== payload.task.id)]);
+      }
+      if (payload.type === 'proofread-task') {
+        setProofreadTasks((current) => [payload.task, ...current.filter((task) => task.id !== payload.task.id)]);
       }
     };
     return () => ws.close();
@@ -122,6 +129,7 @@ export function App() {
         {active === 'search' && <SearchView sites={sites} selectedBookUrl={selectedBookUrl} setSelectedBookUrl={setSelectedBookUrl} onImportUrl={importUrl} onDownload={startDownload} />}
         {active === 'downloads' && <DownloadsView tasks={tasks} books={books} setSelectedBookUrl={setSelectedBookUrl} setActive={setActive} refresh={refresh} />}
         {active === 'translations' && <TranslationsView books={books} selectedBookUrl={selectedBookUrl} setSelectedBookUrl={setSelectedBookUrl} tasks={translationTasks} refresh={refresh} />}
+        {active === 'proofreads' && <ProofreadsView books={books} selectedBookUrl={selectedBookUrl} setSelectedBookUrl={setSelectedBookUrl} tasks={proofreadTasks} refresh={refresh} />}
         {active === 'library' && <LibraryView books={books} selectedBookUrl={selectedBookUrl} setSelectedBookUrl={setSelectedBookUrl} setActive={setActive} refresh={refresh} setMessage={setMessage} />}
         {active === 'package' && <PackageView books={books} selectedBookUrl={selectedBookUrl} setSelectedBookUrl={setSelectedBookUrl} />}
         {active === 'preview' && <PreviewView book={selectedBook} chapters={chapters} />}
@@ -385,6 +393,114 @@ function TranslationFailureList({ failures }: { failures: TranslationFailure[] }
   return <div className="failureList"><header><strong>翻译失败章节</strong><span>{failures.length} 条</span></header><table><thead><tr><th>序号</th><th>章节</th><th>目标语言</th><th>尝试</th><th>错误</th></tr></thead><tbody>{failures.map((failure) => <tr key={failure.chapterUrl}><td>{failure.chapterIndex}</td><td>{failure.title}</td><td>{failure.targetLanguage}</td><td>{failure.attempts}</td><td>{failure.error}</td></tr>)}</tbody></table></div>;
 }
 
+function ProofreadsView({ books, selectedBookUrl, setSelectedBookUrl, tasks, refresh }: { books: BookInfo[]; selectedBookUrl: string; setSelectedBookUrl: (value: string) => void; tasks: ProofreadTask[]; refresh: () => Promise<void> }) {
+  const [settings, setSettings] = useState<ServiceSettings | undefined>();
+  const [force, setForce] = useState(false);
+  const [applyRepairs, setApplyRepairs] = useState(false);
+  const [message, setMessage] = useState('');
+  const [openTaskId, setOpenTaskId] = useState('');
+  const [failures, setFailures] = useState<Record<string, ProofreadFailure[]>>({});
+  const [chapterRefs, setChapterRefs] = useState<ChapterRef[]>([]);
+  const [selectedChapterUrl, setSelectedChapterUrl] = useState('');
+  const [proofread, setProofread] = useState<ChapterProofread | undefined>();
+
+  useEffect(() => {
+    apiGet<ServiceSettings>('/api/settings').then(setSettings).catch((error) => setMessage(error.message));
+  }, []);
+
+  useEffect(() => {
+    if (!selectedBookUrl) {
+      setChapterRefs([]);
+      setSelectedChapterUrl('');
+      setProofread(undefined);
+      return;
+    }
+    apiGet<ChapterRef[]>(`/api/library/chapters?bookUrl=${encodeURIComponent(selectedBookUrl)}`)
+      .then((data) => {
+        setChapterRefs(data);
+        setSelectedChapterUrl((current) => current || data[0]?.sourceUrl || '');
+      })
+      .catch(() => setChapterRefs([]));
+  }, [selectedBookUrl]);
+
+  async function startProofread() {
+    try {
+      setMessage('正在提交校对任务');
+      await apiPost('/api/proofreads/tasks', { bookUrl: selectedBookUrl, force, applyRepairs });
+      setMessage(applyRepairs ? '校对任务已提交，完成章节会自动写回正文' : '校对任务已提交，仅保存校对结果');
+      await refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function loadProofread(sourceUrl = selectedChapterUrl) {
+    if (!sourceUrl) return;
+    try {
+      const data = await apiGet<ChapterProofread>(`/api/library/chapter-proofread?sourceUrl=${encodeURIComponent(sourceUrl)}`);
+      setProofread(data);
+      setMessage(data.applied ? '此校对结果已写回正文' : '此校对结果尚未写回正文');
+    } catch (error) {
+      setProofread(undefined);
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function reproofreadChapter() {
+    if (!selectedChapterUrl) return;
+    try {
+      await apiPost('/api/library/chapter-proofread/reproofread', { sourceUrl: selectedChapterUrl, applyRepairs });
+      setMessage('已提交本章重新校对任务');
+      await refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function toggleFailures(task: ProofreadTask) {
+    const nextOpenTaskId = openTaskId === task.id ? '' : task.id;
+    setOpenTaskId(nextOpenTaskId);
+    if (nextOpenTaskId && !failures[task.id]) {
+      const data = await apiGet<ProofreadFailure[]>(`/api/proofreads/tasks/${task.id}/failures`);
+      setFailures((current) => ({ ...current, [task.id]: data }));
+    }
+  }
+
+  async function pauseTask(task: ProofreadTask) {
+    await apiPost(`/api/proofreads/tasks/${task.id}/pause`, {});
+    await refresh();
+  }
+
+  async function resumeTask(task: ProofreadTask) {
+    await apiPost(`/api/proofreads/tasks/${task.id}/resume`, {});
+    await refresh();
+  }
+
+  async function cancelTask(task: ProofreadTask) {
+    await apiPost(`/api/proofreads/tasks/${task.id}/cancel`, {});
+    await refresh();
+  }
+
+  async function retryFailed(task: ProofreadTask) {
+    try {
+      await apiPost(`/api/proofreads/tasks/${task.id}/retry-failed`, {});
+      setFailures((current) => ({ ...current, [task.id]: [] }));
+      await refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  const bookTasks = tasks.filter((task) => !selectedBookUrl || task.bookUrl === selectedBookUrl);
+
+  return <div className="stack"><section className="panel"><h2>内容校对</h2><div className="translationControls"><label><span>书籍</span><select value={selectedBookUrl} onChange={(event) => setSelectedBookUrl(event.target.value)}><option value="">选择书籍</option>{books.map((book) => <option key={book.canonicalUrl} value={book.canonicalUrl}>{book.title}</option>)}</select></label><label className="checkLine"><input type="checkbox" checked={force} onChange={(event) => setForce(event.target.checked)} />重新校对已有结果</label><label className="checkLine"><input type="checkbox" checked={applyRepairs} onChange={(event) => setApplyRepairs(event.target.checked)} />自动修复正文</label></div><div className="formRow"><button className="primary" onClick={startProofread} disabled={!selectedBookUrl}>开始校对</button><span>{settings ? `校对分块：${settings.proofreading.maxChunkChars} 字符` : '正在读取校对设置'}</span></div><p>{message || '校对结果会保存原文和修正文本；勾选自动修复时正文会写回修正版本。'}</p></section><section className="panel"><h2>校对队列</h2><table><thead><tr><th>状态</th><th>模式</th><th>进度</th><th>失败</th><th>消息</th><th>操作</th></tr></thead><tbody>{bookTasks.map((task) => <tr key={task.id}><td><span className={`badge ${task.status}`}>{task.status}</span></td><td>{task.applyRepairs ? '自动修复' : '仅保存结果'}</td><td>{task.completedChapters}/{task.totalChapters}</td><td>{task.failedChapters}</td><td>{task.message}</td><td><div className="tableActions"><button onClick={() => pauseTask(task)} disabled={!['queued', 'running'].includes(task.status)}><Pause size={14} />暂停</button><button onClick={() => resumeTask(task)} disabled={task.status === 'running' || task.status === 'completed'}><Play size={14} />继续</button><button onClick={() => retryFailed(task)} disabled={task.failedChapters === 0 || task.status === 'running' || task.status === 'cancelled'}><RotateCcw size={14} />重试失败</button><button onClick={() => cancelTask(task)} disabled={['completed', 'failed', 'cancelled'].includes(task.status)}><X size={14} />取消</button><button onClick={() => toggleFailures(task)} disabled={task.failedChapters === 0}>失败明细</button></div></td></tr>)}</tbody></table>{bookTasks.length === 0 && <p>当前书籍还没有校对任务。</p>}{openTaskId && <ProofreadFailureList failures={failures[openTaskId] ?? []} />}</section><section className="panel reader"><h2>校对对照</h2><div className="readerTools"><label><span>章节</span><select value={selectedChapterUrl} onChange={(event) => { setSelectedChapterUrl(event.target.value); setProofread(undefined); }}>{chapterRefs.map((chapter) => <option key={chapter.sourceUrl} value={chapter.sourceUrl}>{chapter.index}. {chapter.title}</option>)}</select></label><button onClick={() => loadProofread()} disabled={!selectedChapterUrl}>查看结果</button><button onClick={reproofreadChapter} disabled={!selectedChapterUrl}><RotateCcw size={14} />重新校对本章</button></div>{proofread ? <div className="readerCompare"><article><header>原文</header><pre>{proofread.originalText}</pre></article><article><header>校对结果</header><pre>{proofread.correctedText}</pre></article></div> : <pre>选择章节后查看已保存的校对对照。</pre>}</section></div>;
+}
+
+function ProofreadFailureList({ failures }: { failures: ProofreadFailure[] }) {
+  if (failures.length === 0) return <div className="failureList"><p>没有失败章节记录。</p></div>;
+  return <div className="failureList"><header><strong>校对失败章节</strong><span>{failures.length} 条</span></header><table><thead><tr><th>序号</th><th>章节</th><th>尝试</th><th>错误</th></tr></thead><tbody>{failures.map((failure) => <tr key={failure.chapterUrl}><td>{failure.chapterIndex}</td><td>{failure.title}</td><td>{failure.attempts}</td><td>{failure.error}</td></tr>)}</tbody></table></div>;
+}
+
 function LibraryView({ books, selectedBookUrl, setSelectedBookUrl, setActive, refresh, setMessage }: { books: BookInfo[]; selectedBookUrl: string; setSelectedBookUrl: (value: string) => void; setActive: (value: string) => void; refresh: () => Promise<void>; setMessage: (value: string) => void }) {
   async function deleteBook(book: BookInfo, event: MouseEvent<HTMLButtonElement>) {
     event.stopPropagation();
@@ -548,5 +664,5 @@ function SettingsView() {
 
   if (!settings) return <section className="panel"><h2>服务设置</h2><p>{message || '正在读取设置...'}</p></section>;
 
-  return <section className="panel"><h2>服务设置</h2><div className="settingsGrid"><label><span>存储后端</span><select value={settings.storage.backend} onChange={(event) => setSettings({ ...settings, storage: { ...settings.storage, backend: event.target.value === 'postgres' ? 'postgres' : 'sqlite' } })}><option value="sqlite">SQLite 本地文件</option><option value="postgres">PostgreSQL 数据库</option></select></label><label><span>SQLite 文件</span><input value={settings.storage.sqlitePath ?? ''} onChange={(event) => setSettings({ ...settings, storage: { ...settings.storage, sqlitePath: event.target.value } })} /></label><label><span>PostgreSQL URL</span><input value={settings.storage.postgresUrl ?? ''} onChange={(event) => setSettings({ ...settings, storage: { ...settings.storage, postgresUrl: event.target.value } })} placeholder="postgres://user:password@host:5432/database" /></label><label><span>默认导出目录</span><input value={settings.exportDir} onChange={(event) => setSettings({ ...settings, exportDir: event.target.value })} placeholder="./exports" /></label><label><span>下载自动重试次数</span><input type="number" min="0" step="1" value={settings.autoRetryAttempts} onChange={(event) => setSettings({ ...settings, autoRetryAttempts: Math.max(0, Number.parseInt(event.target.value || '0', 10)) })} /></label><label><span>默认翻译目标语言</span><input value={settings.translation.defaultTargetLanguage} onChange={(event) => setSettings({ ...settings, translation: { ...settings.translation, defaultTargetLanguage: event.target.value } })} /></label><label><span>翻译分块字符数</span><input type="number" min="1000" step="500" value={settings.translation.maxChunkChars} onChange={(event) => setSettings({ ...settings, translation: { ...settings.translation, maxChunkChars: Math.max(1000, Number.parseInt(event.target.value || '1000', 10)) } })} /></label><label><span>翻译自动重试次数</span><input type="number" min="0" step="1" value={settings.translation.autoRetryAttempts} onChange={(event) => setSettings({ ...settings, translation: { ...settings.translation, autoRetryAttempts: Math.max(0, Number.parseInt(event.target.value || '0', 10)) } })} /></label><label className="promptField"><span>翻译 Prompt</span><textarea value={settings.translation.defaultPrompt} onChange={(event) => setSettings({ ...settings, translation: { ...settings.translation, defaultPrompt: event.target.value } })} /></label></div><div className="formRow"><button className="primary" onClick={save}>保存设置</button><span>当前：{settings.activeStorageBackend === 'postgres' ? 'PostgreSQL' : 'SQLite'}</span></div><p>{message || '元数据、目录缓存、章节缓存、下载任务和翻译任务会写入所选后端。'}</p><p>下载和翻译超过自动重试次数后会进入失败明细，需手动重试。</p><p>AI 接入通过外部 LiteLLM/OpenAI-compatible API 环境变量配置。</p></section>;
+  return <section className="panel"><h2>服务设置</h2><div className="settingsGrid"><label><span>存储后端</span><select value={settings.storage.backend} onChange={(event) => setSettings({ ...settings, storage: { ...settings.storage, backend: event.target.value === 'postgres' ? 'postgres' : 'sqlite' } })}><option value="sqlite">SQLite 本地文件</option><option value="postgres">PostgreSQL 数据库</option></select></label><label><span>SQLite 文件</span><input value={settings.storage.sqlitePath ?? ''} onChange={(event) => setSettings({ ...settings, storage: { ...settings.storage, sqlitePath: event.target.value } })} /></label><label><span>PostgreSQL URL</span><input value={settings.storage.postgresUrl ?? ''} onChange={(event) => setSettings({ ...settings, storage: { ...settings.storage, postgresUrl: event.target.value } })} placeholder="postgres://user:password@host:5432/database" /></label><label><span>默认导出目录</span><input value={settings.exportDir} onChange={(event) => setSettings({ ...settings, exportDir: event.target.value })} placeholder="./exports" /></label><label><span>下载自动重试次数</span><input type="number" min="0" step="1" value={settings.autoRetryAttempts} onChange={(event) => setSettings({ ...settings, autoRetryAttempts: Math.max(0, Number.parseInt(event.target.value || '0', 10)) })} /></label><label><span>默认翻译目标语言</span><input value={settings.translation.defaultTargetLanguage} onChange={(event) => setSettings({ ...settings, translation: { ...settings.translation, defaultTargetLanguage: event.target.value } })} /></label><label><span>翻译分块字符数</span><input type="number" min="1000" step="500" value={settings.translation.maxChunkChars} onChange={(event) => setSettings({ ...settings, translation: { ...settings.translation, maxChunkChars: Math.max(1000, Number.parseInt(event.target.value || '1000', 10)) } })} /></label><label><span>翻译自动重试次数</span><input type="number" min="0" step="1" value={settings.translation.autoRetryAttempts} onChange={(event) => setSettings({ ...settings, translation: { ...settings.translation, autoRetryAttempts: Math.max(0, Number.parseInt(event.target.value || '0', 10)) } })} /></label><label className="promptField"><span>翻译 Prompt</span><textarea value={settings.translation.defaultPrompt} onChange={(event) => setSettings({ ...settings, translation: { ...settings.translation, defaultPrompt: event.target.value } })} /></label><label><span>校对分块字符数</span><input type="number" min="1000" step="500" value={settings.proofreading.maxChunkChars} onChange={(event) => setSettings({ ...settings, proofreading: { ...settings.proofreading, maxChunkChars: Math.max(1000, Number.parseInt(event.target.value || '1000', 10)) } })} /></label><label><span>校对自动重试次数</span><input type="number" min="0" step="1" value={settings.proofreading.autoRetryAttempts} onChange={(event) => setSettings({ ...settings, proofreading: { ...settings.proofreading, autoRetryAttempts: Math.max(0, Number.parseInt(event.target.value || '0', 10)) } })} /></label><label className="promptField"><span>校对 Prompt</span><textarea value={settings.proofreading.defaultPrompt} onChange={(event) => setSettings({ ...settings, proofreading: { ...settings.proofreading, defaultPrompt: event.target.value } })} /></label></div><div className="formRow"><button className="primary" onClick={save}>保存设置</button><span>当前：{settings.activeStorageBackend === 'postgres' ? 'PostgreSQL' : 'SQLite'}</span></div><p>{message || '元数据、目录缓存、章节缓存、下载任务、翻译任务和校对任务会写入所选后端。'}</p><p>下载、翻译和校对超过自动重试次数后会进入失败明细，需手动重试。</p><p>AI 接入通过外部 LiteLLM/OpenAI-compatible API 环境变量配置。</p></section>;
 }

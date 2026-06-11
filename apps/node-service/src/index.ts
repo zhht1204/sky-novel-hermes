@@ -11,18 +11,20 @@ import { safeFileName, toMarkdown, toPlainText, toZip } from '@sky-novel-hermes/
 import type { AiUsageRecord, BookInfo, ChapterContent, ChapterRef } from '@sky-novel-hermes/shared';
 import { getSite, getSites } from '@sky-novel-hermes/sites';
 import { HermesDatabase } from '@sky-novel-hermes/storage';
-import { loadConfig, normalizeTranslationSettings, saveSettings, type AppSettings } from './config.js';
+import { loadConfig, normalizeProofreadSettings, normalizeTranslationSettings, saveSettings, type AppSettings } from './config.js';
 import { ActiveTaskError, DownloadManager } from './downloadManager.js';
+import { ActiveProofreadTaskError, ProofreadManager } from './proofreadManager.js';
 import { ActiveTranslationTaskError, TranslationManager } from './translationManager.js';
 
 const startedAt = new Date().toISOString();
 const config = loadConfig();
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
-let settings: AppSettings = { storage: config.storage, exportDir: config.exportDir, autoRetryAttempts: config.autoRetryAttempts, translation: config.translation };
+let settings: AppSettings = { storage: config.storage, exportDir: config.exportDir, autoRetryAttempts: config.autoRetryAttempts, translation: config.translation, proofreading: config.proofreading };
 let db = await HermesDatabase.connect(settings.storage);
 const ai = createLiteLlmClientFromEnv((record) => db.insertAiUsage(record).catch((error) => logger.warn({ error }, 'Failed to record AI usage')));
 const downloads = new DownloadManager(db, getSite, settings.autoRetryAttempts);
 const translations = new TranslationManager(db, ai, () => settings.translation);
+const proofreads = new ProofreadManager(db, ai, () => settings.proofreading);
 
 mkdirSync(config.exportDir, { recursive: true });
 
@@ -54,6 +56,7 @@ app.post('/api/settings', async (req, res, next) => {
     db = nextDb;
     downloads.setDatabase(nextDb);
     translations.setDatabase(nextDb);
+    proofreads.setDatabase(nextDb);
     downloads.setAutoRetryAttempts(nextSettings.autoRetryAttempts);
     saveSettings(config.settingsPath, nextSettings);
     await previousDb.close();
@@ -334,6 +337,27 @@ app.post('/api/library/chapter-translation/retranslate', async (req, res, next) 
   }
 });
 
+app.get('/api/library/chapter-proofread', async (req, res, next) => {
+  try {
+    const proofread = await db.getProofread(String(req.query.sourceUrl ?? ''));
+    if (!proofread) {
+      res.status(404).json({ error: 'Chapter proofreading result not found' });
+      return;
+    }
+    res.json(proofread);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/library/chapter-proofread/reproofread', async (req, res, next) => {
+  try {
+    res.status(202).json(await proofreads.proofreadChapter(String(req.body.sourceUrl ?? ''), Boolean(req.body.applyRepairs)));
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get('/api/translations/tasks', async (_req, res, next) => {
   try {
     res.json(await db.listTranslationTasks());
@@ -389,6 +413,65 @@ app.post('/api/translations/tasks/:taskId/cancel', async (req, res, next) => {
 app.post('/api/translations/tasks/:taskId/retry-failed', async (req, res, next) => {
   try {
     res.status(202).json(await translations.retryFailed(req.params.taskId));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/proofreads/tasks', async (_req, res, next) => {
+  try {
+    res.json(await db.listProofreadTasks());
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/proofreads/tasks', async (req, res, next) => {
+  try {
+    res.status(202).json(await proofreads.createTask(
+      String(req.body.bookUrl ?? ''),
+      { force: Boolean(req.body.force), applyRepairs: Boolean(req.body.applyRepairs) },
+    ));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/proofreads/tasks/:taskId/failures', async (req, res, next) => {
+  try {
+    res.json(await db.listProofreadFailures(req.params.taskId));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/proofreads/tasks/:taskId/pause', async (req, res, next) => {
+  try {
+    res.json(await proofreads.pauseTask(req.params.taskId));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/proofreads/tasks/:taskId/resume', async (req, res, next) => {
+  try {
+    res.status(202).json(await proofreads.resumeTask(req.params.taskId));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/proofreads/tasks/:taskId/cancel', async (req, res, next) => {
+  try {
+    res.json(await proofreads.cancelTask(req.params.taskId));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/proofreads/tasks/:taskId/retry-failed', async (req, res, next) => {
+  try {
+    res.status(202).json(await proofreads.retryFailed(req.params.taskId));
   } catch (error) {
     next(error);
   }
@@ -455,7 +538,7 @@ app.post('/api/export', async (req, res, next) => {
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   const message = error instanceof Error ? error.message : String(error);
   logger.error({ error }, message);
-  const status = error instanceof ActiveTaskError || error instanceof ActiveTranslationTaskError || message.startsWith('Cancelled ') ? 409 : 500;
+  const status = error instanceof ActiveTaskError || error instanceof ActiveTranslationTaskError || error instanceof ActiveProofreadTaskError || message.startsWith('Cancelled ') ? 409 : 500;
   res.status(status).json({ error: message });
 });
 
@@ -474,6 +557,13 @@ downloads.on('task', (task) => {
 
 translations.on('task', (task) => {
   const payload = JSON.stringify({ type: 'translation-task', task });
+  for (const client of wss.clients) {
+    client.send(payload);
+  }
+});
+
+proofreads.on('task', (task) => {
+  const payload = JSON.stringify({ type: 'proofread-task', task });
   for (const client of wss.clients) {
     client.send(payload);
   }
@@ -563,7 +653,13 @@ function normalizeSettings(input: unknown): AppSettings {
     throw new Error('PostgreSQL connection URL is required');
   }
   const autoRetryAttempts = normalizeRetryAttempts(body?.autoRetryAttempts, settings.autoRetryAttempts);
-  return { storage: { backend, sqlitePath, postgresUrl }, exportDir: body?.exportDir || settings.exportDir, autoRetryAttempts, translation: normalizeTranslationSettings(body?.translation ?? settings.translation) };
+  return {
+    storage: { backend, sqlitePath, postgresUrl },
+    exportDir: body?.exportDir || settings.exportDir,
+    autoRetryAttempts,
+    translation: normalizeTranslationSettings(body?.translation ?? settings.translation),
+    proofreading: normalizeProofreadSettings(body?.proofreading ?? settings.proofreading),
+  };
 }
 
 function normalizeRetryAttempts(value: unknown, fallback: number): number {

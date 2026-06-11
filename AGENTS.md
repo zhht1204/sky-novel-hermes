@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-Sky Novel Hermes is a Tauri desktop application for lawful novel download management, metadata extraction, local library organization, AI-assisted analysis, preview, and export packaging.
+Sky Novel Hermes is a Tauri desktop application for lawful novel download management, metadata extraction, local library organization, AI-assisted analysis, AI proofreading, preview, and export packaging.
 
 The desktop shell uses Tauri. Crawling, download queues, storage orchestration, and AI integration run in a Node.js v22 local service. The browser automation layer uses CloakBrowser through a provider abstraction.
 
@@ -12,8 +12,9 @@ The desktop shell uses Tauri. Crawling, download queues, storage orchestration, 
 - Each site lives in its own folder/module and implements the shared site adapter contract.
 - Site adapters must provide connection checks, search, book info extraction, catalog extraction, and chapter content extraction.
 - LiteLLM or another OpenAI-compatible provider is used through an external API endpoint.
-- The app includes Home, Search, Download Manager, Downloaded Library, Packaging, Preview, and Settings views.
+- The app includes Home, Search, Download Manager, Multilingual Processing, Content Proofreading, Downloaded Library, Packaging, Preview, AI Configuration, and Settings views.
 - Preview is the local reader for downloaded content. It should be reachable from library/export workflows, read stored chapter text from the active storage backend, support available translations, original/translation compare, and current-chapter retranslation.
+- Content Proofreading uses the same AI task semantics as translation: configurable prompt, chunk size, retry budget, pause/resume/cancel, failed chapter retry, and per-chapter result storage. Proofreading records must preserve the original chapter text and corrected text for comparison; applying repairs may update the stored chapter text only after the comparison record is saved.
 - UI should be concise, tool-oriented, information-dense, and visually polished.
 
 ## Compliance Rules
@@ -83,8 +84,8 @@ Both adapters share the `packages/sites/src/quanben5` module and extract metadat
 - Store LiteLLM configuration in environment variables or local app settings.
 - Keep SQLite available as the default local cache; PostgreSQL can be selected in Settings or configured with `HERMES_STORAGE_BACKEND=postgres` plus `HERMES_DATABASE_URL` or `DATABASE_URL`.
 - Keep crawler logs structured and visible in the Download Manager.
-- Keep duplicate URL imports conflict-aware: surface existing books/download tasks/translation tasks, then require an explicit overwrite or append-copy choice. Cancelled download and translation tasks must not be resumable or retryable.
-- Keep Preview behavior documented in the README when reader, translation preview, compare, or retranslation workflows change.
+- Keep duplicate URL imports conflict-aware: surface existing books/download tasks/translation tasks, then require an explicit overwrite or append-copy choice. Cancelled download, translation, and proofreading tasks must not be resumable or retryable.
+- Keep Preview and Content Proofreading behavior documented in the README when reader, translation preview, proofreading compare, repair writeback, or retranslation workflows change.
 - Use small, testable parser functions with HTML fixtures.
 - When changing important app features, user-facing workflows, project operations, build scripts, CI workflows, release automation, supported tooling, or setup commands, update this `AGENTS.md` file with the new maintenance expectations and update the README when user-facing behavior or instructions change.
 

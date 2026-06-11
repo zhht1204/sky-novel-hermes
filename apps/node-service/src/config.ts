@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join, parse } from 'node:path';
-import { DEFAULT_TRANSLATION_PROMPT } from '@sky-novel-hermes/ai';
-import type { TranslationSettings } from '@sky-novel-hermes/shared';
+import { DEFAULT_PROOFREADING_PROMPT, DEFAULT_TRANSLATION_PROMPT } from '@sky-novel-hermes/ai';
+import type { ProofreadSettings, TranslationSettings } from '@sky-novel-hermes/shared';
 import type { HermesDatabaseOptions, StorageBackend } from '@sky-novel-hermes/storage';
 
 loadDotEnvFromWorkspace();
@@ -15,6 +15,7 @@ export interface ServiceConfig {
   storage: HermesDatabaseOptions;
   autoRetryAttempts: number;
   translation: TranslationSettings;
+  proofreading: ProofreadSettings;
 }
 
 export interface AppSettings {
@@ -22,6 +23,7 @@ export interface AppSettings {
   exportDir: string;
   autoRetryAttempts: number;
   translation: TranslationSettings;
+  proofreading: ProofreadSettings;
 }
 
 export function loadConfig(): ServiceConfig {
@@ -37,6 +39,7 @@ export function loadConfig(): ServiceConfig {
     storage: settings.storage,
     autoRetryAttempts: settings.autoRetryAttempts,
     translation: settings.translation,
+    proofreading: settings.proofreading,
   };
 }
 
@@ -50,11 +53,20 @@ export function loadSettings(settingsPath: string, dataDir = './storage'): AppSe
     exportDir: process.env.HERMES_EXPORT_DIR ?? saved.exportDir ?? './exports',
     autoRetryAttempts: numberFromEnvOrSaved(process.env.HERMES_AUTO_RETRY_ATTEMPTS, saved.autoRetryAttempts, 1),
     translation: normalizeTranslationSettings(saved.translation),
+    proofreading: normalizeProofreadSettings(saved.proofreading),
     storage: {
       backend,
       sqlitePath: process.env.HERMES_SQLITE_PATH ?? saved.storage?.sqlitePath ?? join(dataDir, 'hermes.sqlite'),
       postgresUrl: envPostgresUrl ?? saved.storage?.postgresUrl ?? '',
     },
+  };
+}
+
+export function normalizeProofreadSettings(input: Partial<ProofreadSettings> | undefined): ProofreadSettings {
+  return {
+    defaultPrompt: input?.defaultPrompt || DEFAULT_PROOFREADING_PROMPT,
+    maxChunkChars: positiveInteger(input?.maxChunkChars, 6000),
+    autoRetryAttempts: nonnegativeInteger(input?.autoRetryAttempts, 1),
   };
 }
 

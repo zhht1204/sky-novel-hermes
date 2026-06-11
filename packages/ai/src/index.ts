@@ -91,6 +91,28 @@ export class LiteLlmClient {
     return translated.map((item) => item.trim()).filter(Boolean).join('\n\n');
   }
 
+  async proofreadChapter(input: {
+    title: string;
+    text: string;
+    prompt: string;
+    maxChunkChars: number;
+    taskId?: string;
+    sourceId?: string;
+  }): Promise<string> {
+    if (!this.enabled) {
+      throw new Error('LiteLLM is not configured. Set LITELLM_BASE_URL and LITELLM_MODEL.');
+    }
+    const chunks = chunkText(input.text, input.maxChunkChars);
+    const corrected: string[] = [];
+    for (const chunk of chunks) {
+      corrected.push(await this.chat([
+        { role: 'system', content: renderPrompt(input.prompt, { ...input, sourceLanguage: '', targetLanguage: '' }, chunk) },
+        { role: 'user', content: chunk },
+      ], 0.1, { operation: 'proofreading', taskId: input.taskId, sourceId: input.sourceId }));
+    }
+    return corrected.map((item) => item.trim()).filter(Boolean).join('\n\n');
+  }
+
   private async chat(messages: Array<{ role: 'system' | 'user'; content: string }>, temperature: number, metadata: ChatMetadata): Promise<string> {
     const json = await this.chatCompletion(messages, temperature, metadata);
     return extractAssistantText(json);
@@ -136,6 +158,16 @@ export const DEFAULT_TRANSLATION_PROMPT = [
   'Return only the translated novel text. Do not add explanations, notes, markdown fences, or summaries.',
   'Do not include hidden reasoning, chain-of-thought, analysis, <think> blocks, or draft notes.',
   'Preserve paragraph breaks, dialogue markers, names, numbers, and chapter tone.',
+  'Chapter title: {title}',
+].join('\n');
+
+export const DEFAULT_PROOFREADING_PROMPT = [
+  'Proofread the novel chapter text.',
+  'Fix typos, OCR artifacts, duplicated punctuation, broken paragraph spacing, and obvious wording mistakes only when the correction is strongly supported by context.',
+  'Do not rewrite style, summarize, translate, add explanations, add markdown fences, or include notes.',
+  'Do not include hidden reasoning, chain-of-thought, analysis, <think> blocks, or draft notes.',
+  'Preserve names, numbers, dialogue markers, paragraph breaks, and chapter tone.',
+  'Return only the corrected chapter text.',
   'Chapter title: {title}',
 ].join('\n');
 

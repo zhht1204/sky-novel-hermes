@@ -55,6 +55,20 @@ export interface ChapterTranslation {
   updatedAt: string;
 }
 
+export interface ChapterProofread {
+  sourceUrl: string;
+  bookUrl: string;
+  chapterIndex: number;
+  title: string;
+  originalText: string;
+  correctedText: string;
+  applied: boolean;
+  model: string;
+  promptHash: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface SearchResult {
   siteId: string;
   title: string;
@@ -105,6 +119,11 @@ export interface ServiceSettings {
   autoRetryAttempts: number;
   translation: {
     defaultTargetLanguage: string;
+    defaultPrompt: string;
+    maxChunkChars: number;
+    autoRetryAttempts: number;
+  };
+  proofreading: {
     defaultPrompt: string;
     maxChunkChars: number;
     autoRetryAttempts: number;
@@ -170,9 +189,34 @@ export interface TranslationFailure {
   lastFailedAt: string;
 }
 
+export interface ProofreadTask {
+  id: string;
+  bookUrl: string;
+  status: string;
+  totalChapters: number;
+  completedChapters: number;
+  failedChapters: number;
+  force: boolean;
+  applyRepairs: boolean;
+  createdAt: string;
+  updatedAt: string;
+  message?: string;
+}
+
+export interface ProofreadFailure {
+  taskId: string;
+  bookUrl: string;
+  chapterUrl: string;
+  chapterIndex: number;
+  title: string;
+  attempts: number;
+  error: string;
+  lastFailedAt: string;
+}
+
 export interface AiUsageRecord {
   id?: number;
-  operation: 'summary' | 'language-detection' | 'translation';
+  operation: 'summary' | 'language-detection' | 'translation' | 'proofreading';
   taskId?: string;
   sourceId?: string;
   model: string;

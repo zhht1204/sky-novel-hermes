@@ -197,6 +197,54 @@ export const TranslationFailureSchema = z.object({
 
 export type TranslationFailure = z.infer<typeof TranslationFailureSchema>;
 
+export const ChapterProofreadSchema = z.object({
+  sourceUrl: z.string().url(),
+  bookUrl: z.string().url(),
+  chapterIndex: z.number().int().nonnegative(),
+  title: z.string(),
+  originalText: z.string(),
+  correctedText: z.string(),
+  applied: z.boolean().default(false),
+  model: z.string(),
+  promptHash: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export type ChapterProofread = z.infer<typeof ChapterProofreadSchema>;
+
+export const ProofreadStatusSchema = DownloadStatusSchema;
+export type ProofreadStatus = z.infer<typeof ProofreadStatusSchema>;
+
+export const ProofreadTaskSchema = z.object({
+  id: z.string(),
+  bookUrl: z.string().url(),
+  status: ProofreadStatusSchema,
+  totalChapters: z.number().int().nonnegative(),
+  completedChapters: z.number().int().nonnegative(),
+  failedChapters: z.number().int().nonnegative(),
+  force: z.boolean().default(false),
+  applyRepairs: z.boolean().default(false),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  message: z.string().optional(),
+});
+
+export type ProofreadTask = z.infer<typeof ProofreadTaskSchema>;
+
+export const ProofreadFailureSchema = z.object({
+  taskId: z.string(),
+  bookUrl: z.string().url(),
+  chapterUrl: z.string().url(),
+  chapterIndex: z.number().int().nonnegative(),
+  title: z.string(),
+  attempts: z.number().int().nonnegative(),
+  error: z.string(),
+  lastFailedAt: z.string(),
+});
+
+export type ProofreadFailure = z.infer<typeof ProofreadFailureSchema>;
+
 export const TranslationSettingsSchema = z.object({
   defaultTargetLanguage: z.string().min(1),
   defaultPrompt: z.string().min(1),
@@ -206,7 +254,15 @@ export const TranslationSettingsSchema = z.object({
 
 export type TranslationSettings = z.infer<typeof TranslationSettingsSchema>;
 
-export const AiOperationSchema = z.enum(['summary', 'language-detection', 'translation']);
+export const ProofreadSettingsSchema = z.object({
+  defaultPrompt: z.string().min(1),
+  maxChunkChars: z.number().int().positive(),
+  autoRetryAttempts: z.number().int().nonnegative(),
+});
+
+export type ProofreadSettings = z.infer<typeof ProofreadSettingsSchema>;
+
+export const AiOperationSchema = z.enum(['summary', 'language-detection', 'translation', 'proofreading']);
 export type AiOperation = z.infer<typeof AiOperationSchema>;
 
 export const AiUsageRecordSchema = z.object({
