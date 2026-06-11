@@ -1,0 +1,31 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Sky Novel Hermes",
+  "version": "0.1.0",
+  "identifier": "app.sky-novel-hermes.desktop",
+  "build": {
+    "beforeDevCommand": "pnpm --filter @sky-novel-hermes/desktop vite:dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "pnpm --filter @sky-novel-hermes/desktop typecheck && pnpm --filter @sky-novel-hermes/node-service build && pnpm --filter @sky-novel-hermes/desktop vite:build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Sky Novel Hermes",
+        "width": 1280,
+        "height": 820,
+        "minWidth": 980,
+        "minHeight": 680
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": ["icons/icon.ico"]
+  }
+}

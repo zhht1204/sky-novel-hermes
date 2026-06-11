@@ -1,0 +1,23 @@
+{
+  "name": "sky-novel-hermes",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Tauri desktop app for lawful novel download management, local library organization, AI-assisted analysis, preview, and export packaging.",
+  "type": "module",
+  "packageManager": "pnpm@9.15.4",
+  "scripts": {
+    "dev": "pnpm --parallel --filter @sky-novel-hermes/node-service --filter @sky-novel-hermes/desktop dev",
+    "dev:service": "pnpm --filter @sky-novel-hermes/node-service dev",
+    "dev:desktop": "pnpm --filter @sky-novel-hermes/desktop dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm -r test",
+    "lint": "pnpm -r lint"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.30",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.3"
+  }
+}

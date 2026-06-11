@@ -1,0 +1,36 @@
+{
+  "name": "@sky-novel-hermes/node-service",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@sky-novel-hermes/ai": "workspace:*",
+    "@sky-novel-hermes/exporter": "workspace:*",
+    "@sky-novel-hermes/shared": "workspace:*",
+    "@sky-novel-hermes/sites": "workspace:*",
+    "@sky-novel-hermes/storage": "workspace:*",
+    "cors": "^2.8.5",
+    "express": "^5.1.0",
+    "pino": "^9.7.0",
+    "pino-http": "^10.4.0",
+    "uuid": "^11.1.0",
+    "ws": "^8.18.2"
+  },
+  "devDependencies": {
+    "@types/cors": "^2.8.19",
+    "@types/express": "^5.0.3",
+    "@types/node": "^22.15.30",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.19.4",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.3"
+  }
+}

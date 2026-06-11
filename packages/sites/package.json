@@ -1,0 +1,25 @@
+{
+  "name": "@sky-novel-hermes/sites",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "lint": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@sky-novel-hermes/shared": "workspace:*",
+    "cheerio": "^1.0.0",
+    "cloakbrowser": "^0.3.31",
+    "playwright-core": "^1.52.0"
+  },
+  "devDependencies": {
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.3"
+  }
+}
