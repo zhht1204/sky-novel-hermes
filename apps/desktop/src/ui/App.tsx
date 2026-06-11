@@ -347,8 +347,10 @@ function PackageView({ books, selectedBookUrl, setSelectedBookUrl }: { books: Bo
 
 function PreviewView({ book, chapters }: { book?: BookInfo; chapters: ChapterRef[] }) {
   const [chapter, setChapter] = useState<ChapterContent | undefined>();
+  const [originalChapter, setOriginalChapter] = useState<ChapterContent | undefined>();
   const [selectedRef, setSelectedRef] = useState<ChapterRef | undefined>();
   const [language, setLanguage] = useState('original');
+  const [showOriginalCompare, setShowOriginalCompare] = useState(false);
   const [languages, setLanguages] = useState<string[]>([]);
   const [message, setMessage] = useState('');
 
@@ -363,12 +365,17 @@ function PreviewView({ book, chapters }: { book?: BookInfo; chapters: ChapterRef
     if (selectedRef) openChapter(selectedRef).catch((error) => setMessage(error.message));
   }, [language]);
 
+  useEffect(() => {
+    if (language === 'original') setShowOriginalCompare(false);
+  }, [language]);
+
   async function openChapter(ref: ChapterRef) {
     setSelectedRef(ref);
     setMessage('');
+    const original = await apiGet<ChapterContent>(`/api/library/chapter?sourceUrl=${encodeURIComponent(ref.sourceUrl)}`);
+    setOriginalChapter(original);
     if (language === 'original') {
-      const data = await apiGet<ChapterContent>(`/api/library/chapter?sourceUrl=${encodeURIComponent(ref.sourceUrl)}`);
-      setChapter(data);
+      setChapter(original);
       return;
     }
     const data = await apiGet<ChapterTranslation>(`/api/library/chapter-translation?sourceUrl=${encodeURIComponent(ref.sourceUrl)}&language=${encodeURIComponent(language)}`);
@@ -385,7 +392,9 @@ function PreviewView({ book, chapters }: { book?: BookInfo; chapters: ChapterRef
     }
   }
 
-  return <div className="preview"><section className="panel"><h2>{book?.title ?? '未选择书籍'}</h2><p>{book?.description}</p><div className="meta"><span>{book?.author}</span><span>{book?.category}</span><span>{book?.status}</span></div><div className="readerTools"><label><span>查看语言</span><select value={language} onChange={(event) => setLanguage(event.target.value)}><option value="original">原文</option>{languages.map((item) => <option key={item} value={item}>{item}</option>)}</select></label><button onClick={retranslateCurrentChapter} disabled={!selectedRef || language === 'original'}><RotateCcw size={14} />重新翻译本章</button><span>{message}</span></div></section><section className="panel"><h2>目录</h2><div className="chapterList">{chapters.map((item) => <button key={item.sourceUrl} onClick={() => openChapter(item)}>{item.index}. {item.title}</button>)}</div></section><section className="panel reader"><h2>{chapter?.title ?? '章节预览'}</h2><pre>{chapter?.text ?? '选择已下载章节后显示正文。'}</pre></section></div>;
+  const showCompare = showOriginalCompare && language !== 'original' && originalChapter && chapter;
+
+  return <div className="preview"><section className="panel"><h2>{book?.title ?? '未选择书籍'}</h2><p>{book?.description}</p><div className="meta"><span>{book?.author}</span><span>{book?.category}</span><span>{book?.status}</span></div><div className="readerTools"><label><span>查看语言</span><select value={language} onChange={(event) => setLanguage(event.target.value)}><option value="original">原文</option>{languages.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>{language !== 'original' && <label className="checkLine"><input type="checkbox" checked={showOriginalCompare} onChange={(event) => setShowOriginalCompare(event.target.checked)} />原文对照</label>}<button onClick={retranslateCurrentChapter} disabled={!selectedRef || language === 'original'}><RotateCcw size={14} />重新翻译本章</button><span>{message}</span></div></section><section className="panel"><h2>目录</h2><div className="chapterList">{chapters.map((item) => <button key={item.sourceUrl} onClick={() => openChapter(item)}>{item.index}. {item.title}</button>)}</div></section><section className="panel reader"><h2>{chapter?.title ?? '章节预览'}</h2>{showCompare ? <div className="readerCompare"><article><header>原文</header><pre>{originalChapter.text}</pre></article><article><header>{language}</header><pre>{chapter.text}</pre></article></div> : <pre>{chapter?.text ?? '选择已下载章节后显示正文。'}</pre>}</section></div>;
 }
 
 function AiUsageView() {

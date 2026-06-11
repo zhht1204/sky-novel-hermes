@@ -154,11 +154,16 @@ tbody tr:hover { background: #f6f8fa; }
 .readerTools button { border: 0; border-radius: 6px; background: #e5ebf0; color: #1d252c; padding: 8px 11px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
 .readerTools button:disabled { cursor: not-allowed; opacity: 0.55; }
 .reader pre { white-space: pre-wrap; line-height: 1.8; font-family: "Segoe UI", system-ui, sans-serif; color: #26323d; max-height: 64vh; overflow: auto; }
+.readerCompare { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.readerCompare article { min-width: 0; }
+.readerCompare header { color: #687785; font-size: 13px; font-weight: 700; margin-bottom: 8px; }
+.readerCompare pre { max-height: 68vh; }
 
 @media (max-width: 900px) {
   .shell { grid-template-columns: 1fr; }
   .sidebar { position: static; }
   .grid, .usageGrid { grid-template-columns: 1fr; }
   .translationControls, .exportGrid { grid-template-columns: 1fr; }
+  .readerCompare { grid-template-columns: 1fr; }
   .formRow { flex-direction: column; align-items: stretch; }
 }
