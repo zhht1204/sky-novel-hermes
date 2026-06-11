@@ -58,6 +58,52 @@ app.post('/api/sites/:siteId/search', async (req, res, next) => {
   }
 });
 
+app.post('/api/search', async (req, res, next) => {
+  try {
+    const keyword = String(req.body.keyword ?? '').trim();
+    const limit = Number(req.body.limit ?? 20);
+    const requestedSiteIds = Array.isArray(req.body.siteIds) ? req.body.siteIds.map(String) : [];
+    const searchableSites = getSites().filter((site) => site.capabilities.includes('search'));
+    const selectedSites = requestedSiteIds.length > 0
+      ? searchableSites.filter((site) => requestedSiteIds.includes(site.id))
+      : searchableSites;
+
+    if (!keyword) {
+      res.status(400).json({ error: 'keyword is required' });
+      return;
+    }
+
+    const searchJobs = selectedSites.map((site) => ({
+      siteId: site.id,
+      displayName: site.displayName,
+      run: site.search({ keyword, limit }),
+    }));
+
+    const settled = await Promise.allSettled(searchJobs.map(async (job) => ({
+      siteId: job.siteId,
+      displayName: job.displayName,
+      results: await job.run,
+    })));
+
+    res.json({
+      keyword,
+      sites: settled.map((result, index) => {
+        if (result.status === 'fulfilled') return result.value;
+        const job = searchJobs[index];
+        return {
+          siteId: job?.siteId ?? 'unknown',
+          displayName: job?.displayName ?? 'Unknown source',
+          results: [],
+          error: result.reason instanceof Error ? result.reason.message : String(result.reason),
+        };
+      }),
+      results: settled.flatMap((result) => result.status === 'fulfilled' ? result.value.results : []),
+    });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post('/api/sites/:siteId/book-info', async (req, res, next) => {
   try {
     const book = await getSite(req.params.siteId).getBookInfo({ url: req.body.url });
@@ -73,6 +119,21 @@ app.post('/api/sites/:siteId/catalog', async (req, res, next) => {
     const catalog = await getSite(req.params.siteId).getCatalog({ bookUrl: req.body.bookUrl });
     db.upsertCatalog(catalog);
     res.json(catalog);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/import-url', async (req, res, next) => {
+  try {
+    const url = String(req.body.url ?? '').trim();
+    const siteId = typeof req.body.siteId === 'string' && req.body.siteId ? req.body.siteId : undefined;
+    const site = siteId ? getSite(siteId) : getSiteForUrl(url);
+    const book = await site.getBookInfo({ url });
+    const catalog = await site.getCatalog({ bookUrl: url });
+    db.upsertBook(book);
+    db.upsertCatalog(catalog);
+    res.json({ book, catalog, catalogCount: catalog.length });
   } catch (error) {
     next(error);
   }
@@ -177,3 +238,11 @@ downloads.on('task', (task) => {
 server.listen(config.port, config.host, () => {
   logger.info(`Sky Novel Hermes service listening on http://${config.host}:${config.port}`);
 });
+
+function getSiteForUrl(url: string) {
+  const site = getSites().find((candidate) => url.startsWith(candidate.baseUrl));
+  if (!site) {
+    throw new Error(`No registered site supports URL: ${url}`);
+  }
+  return site;
+}

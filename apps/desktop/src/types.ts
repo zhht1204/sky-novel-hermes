@@ -41,6 +41,25 @@ export interface SearchResult {
   description?: string;
 }
 
+export interface SiteSearchResultGroup {
+  siteId: string;
+  displayName: string;
+  results: SearchResult[];
+  error?: string;
+}
+
+export interface AggregatedSearchResponse {
+  keyword: string;
+  sites: SiteSearchResultGroup[];
+  results: SearchResult[];
+}
+
+export interface UrlImportResponse {
+  book: BookInfo;
+  catalog: ChapterRef[];
+  catalogCount: number;
+}
+
 export interface DownloadTask {
   id: string;
   siteId: string;

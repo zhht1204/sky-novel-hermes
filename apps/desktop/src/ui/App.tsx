@@ -1,7 +1,7 @@
 import { Archive, BookOpen, Download, Eye, Home, Package, Search, Settings, Sparkles } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { apiGet, apiPost, serviceWsUrl } from '../api.js';
-import type { BookInfo, ChapterContent, ChapterRef, DownloadTask, SearchResult, SiteSummary } from '../types.js';
+import type { AggregatedSearchResponse, BookInfo, ChapterContent, ChapterRef, DownloadTask, SiteSearchResultGroup, SiteSummary, UrlImportResponse } from '../types.js';
 
 const sampleUrl = 'https://big5.quanben5.io/n/moshi_wodunliaoyiwanwuzi/xiaoshuo.html';
 const nav = [
@@ -63,6 +63,16 @@ export function App() {
     await refresh();
   }
 
+  async function importUrl(url: string, siteId?: string): Promise<UrlImportResponse> {
+    setMessage('正在解析 URL 并导入目录');
+    const result = await apiPost<UrlImportResponse>('/api/import-url', { url, siteId });
+    setSelectedBookUrl(result.book.canonicalUrl);
+    setChapters(result.catalog);
+    setMessage(`已导入《${result.book.title}》目录 ${result.catalogCount} 章`);
+    await refresh();
+    return result;
+  }
+
   async function startDownload() {
     setMessage('下载任务已提交');
     await apiPost('/api/downloads', { siteId: 'quanben5-big5', bookUrl: selectedBookUrl || sampleUrl });
@@ -89,7 +99,7 @@ export function App() {
           <button className="primary" onClick={() => refresh()}>刷新</button>
         </header>
         {active === 'home' && <HomeView sites={sites} tasks={tasks} books={books} onImport={importSample} />}
-        {active === 'search' && <SearchView selectedBookUrl={selectedBookUrl} setSelectedBookUrl={setSelectedBookUrl} onImport={importSample} onDownload={startDownload} />}
+        {active === 'search' && <SearchView sites={sites} selectedBookUrl={selectedBookUrl} setSelectedBookUrl={setSelectedBookUrl} onImportUrl={importUrl} onDownload={startDownload} />}
         {active === 'downloads' && <DownloadsView tasks={tasks} />}
         {active === 'library' && <LibraryView books={books} setSelectedBookUrl={setSelectedBookUrl} setActive={setActive} />}
         {active === 'package' && <PackageView selectedBookUrl={selectedBookUrl} />}
@@ -108,16 +118,48 @@ function Metric({ label, value }: { label: string; value: number }) {
   return <section className="metric"><span>{label}</span><strong>{value}</strong></section>;
 }
 
-function SearchView({ selectedBookUrl, setSelectedBookUrl, onImport, onDownload }: { selectedBookUrl: string; setSelectedBookUrl: (value: string) => void; onImport: () => void; onDownload: () => void }) {
+function SearchView({ sites, selectedBookUrl, setSelectedBookUrl, onImportUrl, onDownload }: { sites: SiteSummary[]; selectedBookUrl: string; setSelectedBookUrl: (value: string) => void; onImportUrl: (url: string, siteId?: string) => Promise<UrlImportResponse>; onDownload: () => void }) {
   const [keyword, setKeyword] = useState('');
-  const [results, setResults] = useState<SearchResult[]>([]);
+  const [selectedSiteIds, setSelectedSiteIds] = useState<string[]>([]);
+  const [searchGroups, setSearchGroups] = useState<SiteSearchResultGroup[]>([]);
+  const [urlSiteId, setUrlSiteId] = useState('');
+  const [importedBook, setImportedBook] = useState<BookInfo | undefined>();
+  const [catalogPreview, setCatalogPreview] = useState<ChapterRef[]>([]);
 
-  async function search() {
-    const data = await apiPost<SearchResult[]>('/api/sites/quanben5-big5/search', { keyword, limit: 20 });
-    setResults(data);
+  const searchableSites = sites.filter((site) => site.capabilities.includes('search'));
+
+  useEffect(() => {
+    setSelectedSiteIds((current) => current.length > 0 ? current : searchableSites.map((site) => site.id));
+  }, [searchableSites.map((site) => site.id).join('|')]);
+
+  useEffect(() => {
+    const firstSiteId = sites[0]?.id;
+    if (!urlSiteId && firstSiteId) {
+      setUrlSiteId(firstSiteId);
+    }
+  }, [sites, urlSiteId]);
+
+  function toggleSite(siteId: string) {
+    setSelectedSiteIds((current) => current.includes(siteId) ? current.filter((candidate) => candidate !== siteId) : [...current, siteId]);
   }
 
-  return <div className="stack"><section className="panel"><h2>关键词搜索</h2><div className="formRow"><input placeholder="书名或作者" value={keyword} onChange={(event) => setKeyword(event.target.value)} /><button onClick={search}>搜索</button></div><div className="resultList">{results.map((result) => <button key={result.url} onClick={() => setSelectedBookUrl(result.url)}><strong>{result.title}</strong><span>{result.author ?? result.url}</span></button>)}</div></section><section className="panel"><h2>URL 导入</h2><div className="formRow"><input value={selectedBookUrl} onChange={(event) => setSelectedBookUrl(event.target.value)} /><button onClick={onImport}>解析目录</button><button className="primary" onClick={onDownload}>开始下载</button></div></section></div>;
+  async function search() {
+    const data = await apiPost<AggregatedSearchResponse>('/api/search', { keyword, siteIds: selectedSiteIds, limit: 20 });
+    setSearchGroups(data.sites);
+  }
+
+  async function parseUrl() {
+    const result = await onImportUrl(selectedBookUrl, urlSiteId || undefined);
+    setImportedBook(result.book);
+    setCatalogPreview(result.catalog);
+  }
+
+  return <div className="stack"><section className="panel"><h2>聚合搜索</h2><div className="sitePicker">{searchableSites.map((site) => <label key={site.id}><input type="checkbox" checked={selectedSiteIds.includes(site.id)} onChange={() => toggleSite(site.id)} />{site.displayName}</label>)}</div><div className="formRow"><input placeholder="书名或作者" value={keyword} onChange={(event) => setKeyword(event.target.value)} /><button onClick={search} disabled={selectedSiteIds.length === 0 || !keyword.trim()}>同步搜索</button></div><div className="searchGroups">{searchGroups.map((group) => <section className="sourceGroup" key={group.siteId}><header><strong>{group.displayName}</strong><span>{group.error ? group.error : `${group.results.length} 条结果`}</span></header><div className="resultList">{group.results.map((result) => <button key={`${result.siteId}:${result.url}`} onClick={() => setSelectedBookUrl(result.url)}><strong>{result.title}</strong><span>{result.author ?? result.url}</span></button>)}</div></section>)}</div></section><section className="panel"><h2>URL 导入</h2><div className="formRow"><select value={urlSiteId} onChange={(event) => setUrlSiteId(event.target.value)}>{sites.map((site) => <option key={site.id} value={site.id}>{site.displayName}</option>)}</select><input value={selectedBookUrl} onChange={(event) => setSelectedBookUrl(event.target.value)} /><button onClick={parseUrl}>解析目录</button><button className="primary" onClick={onDownload}>开始下载</button></div>{importedBook && <div className="bookSummary">{importedBook.coverUrl && <img src={importedBook.coverUrl} alt="" />}<div><strong>{importedBook.title}</strong><span>{[importedBook.author, importedBook.category, importedBook.status].filter(Boolean).join(' · ')}</span><p>{importedBook.description}</p></div></div>}<CatalogPreview chapters={catalogPreview} /></section></div>;
+}
+
+function CatalogPreview({ chapters }: { chapters: ChapterRef[] }) {
+  if (chapters.length === 0) return null;
+  return <div className="catalogPreview"><header><strong>目录预览</strong><span>{chapters.length} 章</span></header><div>{chapters.slice(0, 80).map((chapter) => <button key={chapter.sourceUrl}>{chapter.index}. {chapter.title}</button>)}</div>{chapters.length > 80 && <p>已显示前 80 章，其余章节已写入本地目录。</p>}</div>;
 }
 
 function DownloadsView({ tasks }: { tasks: DownloadTask[] }) {
