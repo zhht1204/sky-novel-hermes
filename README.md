@@ -23,7 +23,7 @@ The Node service stores cached metadata, catalogs, chapter content, and download
 
 Downloaded novel content is stored as structured chapter records in the selected backend. Each chapter can keep plain text and HTML, which makes the database the canonical cache while TXT, Markdown, ZIP, and future EPUB/PDF files are generated as export artifacts. The Multilingual Processing page can detect downloaded book language, start AI translation tasks for a target language, pause/resume/cancel those tasks, retry failed chapters, and retranslate unsatisfactory content. The Packaging page lets you choose the book, language, export format, output directory, and file name at export time; Settings controls the default export directory and translation prompt.
 
-`pnpm dev` runs the Node service and Tauri desktop app in parallel. You can also run them in two terminals when debugging one side at a time:
+`pnpm dev` starts the Node service first, waits until `http://127.0.0.1:17891/api/status` is reachable, and then starts the Tauri desktop app. This prevents the desktop UI from opening before the local API is ready. You can also run them in two terminals when debugging one side at a time:
 
 ```powershell
 # terminal 1

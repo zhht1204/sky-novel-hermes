@@ -6,7 +6,8 @@
   "type": "module",
   "packageManager": "pnpm@9.15.4",
   "scripts": {
-    "dev": "pnpm --parallel --filter @sky-novel-hermes/node-service --filter @sky-novel-hermes/desktop dev",
+    "dev": "node scripts/dev.mjs",
+    "dev:parallel": "pnpm --parallel --filter @sky-novel-hermes/node-service --filter @sky-novel-hermes/desktop dev",
     "dev:service": "pnpm --filter @sky-novel-hermes/node-service dev",
     "dev:desktop": "pnpm --filter @sky-novel-hermes/desktop dev",
     "build": "pnpm -r build",
