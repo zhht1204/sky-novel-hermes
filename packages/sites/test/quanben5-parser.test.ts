@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { parseBookInfo, parseCatalog, parseChapter } from '../src/quanben5-big5/parser.js';
-import { QUANBEN5_SIMPLIFIED } from '../src/quanben5-big5/selectors.js';
+import { parseBookInfo, parseCatalog, parseChapter } from '../src/quanben5/parser.js';
+import { QUANBEN5_SIMPLIFIED } from '../src/quanben5/selectors.js';
 
 describe('quanben5 catalog parser', () => {
   it('extracts chapter links in numeric order', () => {
@@ -31,5 +31,15 @@ describe('quanben5 catalog parser', () => {
     const chapter = parseChapter(html, 'https://www.quanben5.io/n/book/xiaoshuo.html', 'https://www.quanben5.io/n/book/1.html', QUANBEN5_SIMPLIFIED);
     expect(chapter.siteId).toBe('quanben5-simplified');
     expect(chapter.text).toBe('正文内容');
+  });
+
+  it('removes font controls and page navigation from chapters', () => {
+    const html = '<h1>第一章 A</h1><div id="content">正文上\n字体:16+-\n上一页\n目录\n下一页\n正文下</div>';
+    const chapter = parseChapter(html, 'https://www.quanben5.io/n/book/xiaoshuo.html', 'https://www.quanben5.io/n/book/1.html', QUANBEN5_SIMPLIFIED);
+    expect(chapter.text).toBe('正文上\n\n正文下');
+    expect(chapter.text).not.toContain('字体');
+    expect(chapter.text).not.toContain('上一页');
+    expect(chapter.text).not.toContain('目录');
+    expect(chapter.text).not.toContain('下一页');
   });
 });
