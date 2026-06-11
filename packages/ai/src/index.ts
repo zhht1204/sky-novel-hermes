@@ -23,7 +23,7 @@ export class LiteLlmClient {
       throw new Error('LiteLLM is not configured. Set LITELLM_BASE_URL and LITELLM_MODEL.');
     }
 
-    const response = await fetch(new URL('/chat/completions', this.config.baseUrl).toString(), {
+    const response = await fetch(chatCompletionsUrl(this.config.baseUrl), {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -40,7 +40,7 @@ export class LiteLlmClient {
     });
 
     if (!response.ok) {
-      throw new Error(`LiteLLM request failed: ${response.status} ${await response.text()}`);
+      throw new Error(`LiteLLM request failed: ${response.status} ${await readResponseMessage(response)}`);
     }
 
     const json = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
@@ -108,7 +108,7 @@ export class LiteLlmClient {
     if (!this.enabled) {
       throw new Error('LiteLLM is not configured. Set LITELLM_BASE_URL and LITELLM_MODEL.');
     }
-    const response = await fetch(new URL('/chat/completions', this.config.baseUrl).toString(), {
+    const response = await fetch(chatCompletionsUrl(this.config.baseUrl), {
       method: 'POST',
       headers: {
         'content-type': 'application/json',
@@ -117,7 +117,7 @@ export class LiteLlmClient {
       body: JSON.stringify({ model: this.config.model, messages, temperature }),
     });
     if (!response.ok) {
-      throw new Error(`LiteLLM request failed: ${response.status} ${await response.text()}`);
+      throw new Error(`LiteLLM request failed: ${response.status} ${await readResponseMessage(response)}`);
     }
     const json = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
     return json.choices?.[0]?.message?.content?.trim() ?? '';
@@ -161,6 +161,28 @@ function detectLanguageHeuristically(text: string): { language: string; confiden
   }
   if (counts.latin / significant > 0.7) return { language: 'en', confidence: 0.9 };
   return { language: 'unknown', confidence: 0.25 };
+}
+
+function chatCompletionsUrl(baseUrl: string): string {
+  const trimmed = baseUrl.trim();
+  if (/\/chat\/completions\/?$/i.test(trimmed)) return trimmed;
+  return new URL('chat/completions', trimmed.endsWith('/') ? trimmed : `${trimmed}/`).toString();
+}
+
+async function readResponseMessage(response: Response): Promise<string> {
+  const text = await response.text();
+  try {
+    const parsed = JSON.parse(text) as { error?: unknown; message?: unknown };
+    if (typeof parsed.error === 'string') return parsed.error;
+    if (typeof parsed.message === 'string') return parsed.message;
+    if (parsed.error && typeof parsed.error === 'object' && 'message' in parsed.error) {
+      const message = (parsed.error as { message?: unknown }).message;
+      if (typeof message === 'string') return message;
+    }
+  } catch {
+    // Fall through to HTML/text cleanup below.
+  }
+  return text.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim() || response.statusText;
 }
 
 function countMatches(text: string, pattern: RegExp): number {
