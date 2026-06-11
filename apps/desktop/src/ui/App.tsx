@@ -27,7 +27,7 @@ const navSections = [
     ],
   },
   {
-    label: '处理',
+    label: 'AI处理',
     items: [
       { id: 'translations', label: '多语言处理', icon: Languages },
       { id: 'proofreads', label: '内容校对', icon: ClipboardCheck },
