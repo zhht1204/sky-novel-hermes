@@ -44,14 +44,14 @@ Every site adapter must implement:
 
 Adapters should use deterministic HTML parsing first, browser rendering second, and LiteLLM assistance only as a fallback.
 
-## First Site
+## Quanben5 Sites
 
-The first site adapter is `quanben5-big5`, targeting:
+The Quanben5 site adapters are:
 
-- Base URL: `https://big5.quanben5.io`
-- Sample catalog URL: `https://big5.quanben5.io/n/moshi_wodunliaoyiwanwuzi/xiaoshuo.html`
+- `quanben5-big5`, targeting `https://big5.quanben5.io`
+- `quanben5-simplified`, targeting `https://www.quanben5.io`
 
-The adapter extracts metadata, catalog records, and authorized chapter content. Keep all selectors isolated in the site module.
+The adapters extract metadata, catalog records, and authorized chapter content from user-provided URLs. Keep all selectors isolated in the site module.
 
 ## Development Commands
 

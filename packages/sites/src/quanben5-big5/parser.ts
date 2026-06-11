@@ -2,7 +2,7 @@ import * as cheerio from 'cheerio';
 import type { BookInfo, ChapterContent, ChapterRef } from '@sky-novel-hermes/shared';
 import { nowIso } from '@sky-novel-hermes/shared';
 import { absolutizeUrl, normalizeWhitespace } from '../http.js';
-import { QUANBEN5_BIG5, selectors } from './selectors.js';
+import { QUANBEN5_BIG5, selectors, type Quanben5SourceConfig } from './selectors.js';
 
 const chapterPathPattern = /\/n\/[^/]+\/(\d+)\.html$/;
 
@@ -11,21 +11,21 @@ function firstTextAfterLabel(fullText: string, label: string): string | undefine
   return fullText.match(pattern)?.[1]?.trim();
 }
 
-export function parseBookInfo(html: string, sourceUrl: string): BookInfo {
+export function parseBookInfo(html: string, sourceUrl: string, source: Quanben5SourceConfig = QUANBEN5_BIG5): BookInfo {
   const $ = cheerio.load(html);
-  const pageText = normalizeWhitespace($('body').text()).replace(/\s*(作者|類別|状态|狀態)[:：]/g, '\n$1:');
+  const pageText = extractPageText($).replace(/\s*(作者|類別|类别|状态|狀態)[:：]/g, '\n$1:');
   const h1 = normalizeWhitespace($('h1').first().text());
   const h3 = normalizeWhitespace($('h3').first().text());
   const title = h3 || h1 || normalizeWhitespace($('title').text()).replace(/_.*$/, '');
   const cover = $(selectors.coverImage).first().attr('src');
 
   return {
-    siteId: QUANBEN5_BIG5.id,
+    siteId: source.id,
     sourceUrl,
     canonicalUrl: sourceUrl,
     title,
     author: firstTextAfterLabel(pageText, '作者'),
-    category: firstTextAfterLabel(pageText, '類別'),
+    category: firstTextAfterLabel(pageText, '類別') ?? firstTextAfterLabel(pageText, '类别'),
     status: firstTextAfterLabel(pageText, '狀態') ?? firstTextAfterLabel(pageText, '状态'),
     coverUrl: cover ? absolutizeUrl(sourceUrl, cover) : undefined,
     description: extractDescription($, title),
@@ -33,15 +33,25 @@ export function parseBookInfo(html: string, sourceUrl: string): BookInfo {
   };
 }
 
+function extractPageText($: cheerio.CheerioAPI): string {
+  $('br').replaceWith('\n');
+  const blockText = $('body').find('p, li, div, section, article')
+    .toArray()
+    .map((element) => normalizeWhitespace($(element).text()))
+    .filter(Boolean)
+    .join('\n');
+  return blockText || normalizeWhitespace($('body').text());
+}
+
 function extractDescription($: cheerio.CheerioAPI, title: string): string | undefined {
   const candidates = $('p, .intro, .description, .bookintro, .desc')
     .toArray()
     .map((element) => normalizeWhitespace($(element).text()))
-    .filter((text) => text.length > 40 && !text.includes('當前位置') && !text.includes(title));
+    .filter((text) => text.length > 40 && !text.includes('當前位置') && !text.includes('当前位置') && !text.includes(title));
   return candidates[0];
 }
 
-export function parseCatalog(html: string, bookUrl: string): ChapterRef[] {
+export function parseCatalog(html: string, bookUrl: string, source: Quanben5SourceConfig = QUANBEN5_BIG5): ChapterRef[] {
   const $ = cheerio.load(html);
   const seen = new Set<string>();
   const chapters: ChapterRef[] = [];
@@ -56,7 +66,7 @@ export function parseCatalog(html: string, bookUrl: string): ChapterRef[] {
     if (!match || seen.has(sourceUrl)) return;
     seen.add(sourceUrl);
     chapters.push({
-      siteId: QUANBEN5_BIG5.id,
+      siteId: source.id,
       bookUrl,
       sourceUrl,
       index: Number(match[1]),
@@ -67,7 +77,7 @@ export function parseCatalog(html: string, bookUrl: string): ChapterRef[] {
   return chapters.sort((left, right) => left.index - right.index);
 }
 
-export function parseChapter(html: string, bookUrl: string, sourceUrl: string): ChapterContent {
+export function parseChapter(html: string, bookUrl: string, sourceUrl: string, source: Quanben5SourceConfig = QUANBEN5_BIG5): ChapterContent {
   const $ = cheerio.load(html);
   $('script, style, iframe, ins, .ads, .advert, .nav, .footer').remove();
   const title = normalizeWhitespace($(selectors.chapterTitle).first().text()) || normalizeWhitespace($('title').text()).replace(/_.*$/, '');
@@ -75,13 +85,13 @@ export function parseChapter(html: string, bookUrl: string, sourceUrl: string): 
   const textSource = body.length > 0 ? body.text() : $('body').text();
   const text = normalizeWhitespace(
     textSource
-      .replace(/上一章|下一章|返回目錄|全本小說網/g, '\n')
+      .replace(/上一章|下一章|返回目錄|返回目录|全本小說網|全本小说网/g, '\n')
       .replace(/\r/g, '')
   );
   const match = new URL(sourceUrl).pathname.match(chapterPathPattern);
 
   return {
-    siteId: QUANBEN5_BIG5.id,
+    siteId: source.id,
     bookUrl,
     sourceUrl,
     title,

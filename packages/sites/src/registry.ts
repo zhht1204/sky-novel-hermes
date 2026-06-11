@@ -1,7 +1,7 @@
 import type { NovelSiteAdapter } from '@sky-novel-hermes/shared';
-import { Quanben5Big5SiteAdapter } from './quanben5-big5/site.js';
+import { Quanben5Big5SiteAdapter, Quanben5SimplifiedSiteAdapter } from './quanben5-big5/site.js';
 
-const sites: NovelSiteAdapter[] = [new Quanben5Big5SiteAdapter()];
+const sites: NovelSiteAdapter[] = [new Quanben5Big5SiteAdapter(), new Quanben5SimplifiedSiteAdapter()];
 
 export function getSites(): NovelSiteAdapter[] {
   return sites;

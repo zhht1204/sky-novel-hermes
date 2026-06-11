@@ -1,9 +1,8 @@
-import { Archive, BookOpen, BrainCircuit, Download, Eye, Home, Languages, Package, Pause, Play, RotateCcw, Search, Settings, Sparkles, X } from 'lucide-react';
+import { Archive, BookOpen, BrainCircuit, Download, Eye, Home, Languages, Package, Pause, Play, RotateCcw, Search, Settings, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { apiGet, apiPost, serviceUrl, serviceWsUrl } from '../api.js';
 import type { AggregatedSearchResponse, AiUsageRecord, AiUsageSummary, BookInfo, ChapterContent, ChapterRef, ChapterTranslation, DownloadFailure, DownloadTask, ExportResponse, LanguageProfile, ServiceSettings, SiteSearchResultGroup, SiteSummary, TranslationFailure, TranslationTask, UrlImportResponse } from '../types.js';
 
-const sampleUrl = 'https://big5.quanben5.io/n/moshi_wodunliaoyiwanwuzi/xiaoshuo.html';
 const nav = [
   { id: 'home', label: '主页', icon: Home },
   { id: 'search', label: '搜索', icon: Search },
@@ -23,7 +22,7 @@ export function App() {
   const [tasks, setTasks] = useState<DownloadTask[]>([]);
   const [translationTasks, setTranslationTasks] = useState<TranslationTask[]>([]);
   const [chapters, setChapters] = useState<ChapterRef[]>([]);
-  const [selectedBookUrl, setSelectedBookUrl] = useState(sampleUrl);
+  const [selectedBookUrl, setSelectedBookUrl] = useState('');
   const [message, setMessage] = useState('准备就绪');
 
   async function refresh() {
@@ -74,14 +73,6 @@ export function App() {
 
   const selectedBook = useMemo(() => books.find((book) => book.canonicalUrl === selectedBookUrl || book.sourceUrl === selectedBookUrl), [books, selectedBookUrl]);
 
-  async function importSample() {
-    setMessage('正在导入样本元数据和目录');
-    const result = await apiPost<{ book: BookInfo; catalogCount: number }>('/api/sample/import');
-    setSelectedBookUrl(result.book.canonicalUrl);
-    setMessage(`已导入目录 ${result.catalogCount} 章`);
-    await refresh();
-  }
-
   async function importUrl(url: string, siteId?: string): Promise<UrlImportResponse> {
     setMessage('正在解析 URL 并导入目录');
     const result = await apiPost<UrlImportResponse>('/api/import-url', { url, siteId });
@@ -93,8 +84,14 @@ export function App() {
   }
 
   async function startDownload() {
+    const bookUrl = selectedBookUrl.trim();
+    if (!bookUrl) {
+      setMessage('请输入授权目录 URL');
+      return;
+    }
+    const siteId = sites.find((site) => bookUrl.startsWith(site.baseUrl))?.id ?? sites[0]?.id ?? 'quanben5-big5';
     setMessage('下载任务已提交');
-    await apiPost('/api/downloads', { siteId: 'quanben5-big5', bookUrl: selectedBookUrl || sampleUrl });
+    await apiPost('/api/downloads', { siteId, bookUrl });
     await refresh();
   }
 
@@ -117,7 +114,7 @@ export function App() {
           </div>
           <button className="primary" onClick={refreshWithMessage}>刷新</button>
         </header>
-        {active === 'home' && <HomeView sites={sites} tasks={tasks} books={books} onImport={importSample} />}
+        {active === 'home' && <HomeView sites={sites} tasks={tasks} books={books} onOpenImport={() => setActive('search')} />}
         {active === 'search' && <SearchView sites={sites} selectedBookUrl={selectedBookUrl} setSelectedBookUrl={setSelectedBookUrl} onImportUrl={importUrl} onDownload={startDownload} />}
         {active === 'downloads' && <DownloadsView tasks={tasks} refresh={refresh} />}
         {active === 'translations' && <TranslationsView books={books} selectedBookUrl={selectedBookUrl} setSelectedBookUrl={setSelectedBookUrl} tasks={translationTasks} refresh={refresh} />}
@@ -131,8 +128,8 @@ export function App() {
   );
 }
 
-function HomeView({ sites, tasks, books, onImport }: { sites: SiteSummary[]; tasks: DownloadTask[]; books: BookInfo[]; onImport: () => void }) {
-  return <div className="grid"><Metric label="站点" value={sites.length} /><Metric label="书库" value={books.length} /><Metric label="任务" value={tasks.length} /><section className="panel wide"><h2>快速开始</h2><p>导入第一个样本的元数据和目录，确认后可启动授权下载任务。</p><button className="primary" onClick={onImport}><Sparkles size={16} />导入样本目录</button></section></div>;
+function HomeView({ sites, tasks, books, onOpenImport }: { sites: SiteSummary[]; tasks: DownloadTask[]; books: BookInfo[]; onOpenImport: () => void }) {
+  return <div className="grid"><Metric label="站点" value={sites.length} /><Metric label="书库" value={books.length} /><Metric label="任务" value={tasks.length} /><section className="panel wide"><h2>快速开始</h2><p>输入授权目录 URL，解析元数据和目录后再启动下载任务。</p><button className="primary" onClick={onOpenImport}><Search size={16} />URL 导入</button></section></div>;
 }
 
 function Metric({ label, value }: { label: string; value: number }) {
@@ -175,7 +172,7 @@ function SearchView({ sites, selectedBookUrl, setSelectedBookUrl, onImportUrl, o
     setCatalogPreview(result.catalog);
   }
 
-  return <div className="stack"><section className="panel"><h2>聚合搜索</h2><div className="sitePicker">{searchableSites.map((site) => <label key={site.id}><input type="checkbox" checked={selectedSiteIds.includes(site.id)} onChange={() => toggleSite(site.id)} />{site.displayName}</label>)}</div><div className="formRow"><input placeholder="书名或作者" value={keyword} onChange={(event) => setKeyword(event.target.value)} /><button onClick={search} disabled={selectedSiteIds.length === 0 || !keyword.trim()}>同步搜索</button></div><div className="searchGroups">{searchGroups.map((group) => <section className="sourceGroup" key={group.siteId}><header><strong>{group.displayName}</strong><span>{group.error ? group.error : `${group.results.length} 条结果`}</span></header><div className="resultList">{group.results.map((result) => <button key={`${result.siteId}:${result.url}`} onClick={() => setSelectedBookUrl(result.url)}><strong>{result.title}</strong><span>{result.author ?? result.url}</span></button>)}</div></section>)}</div></section><section className="panel"><h2>URL 导入</h2><div className="formRow"><select value={urlSiteId} onChange={(event) => setUrlSiteId(event.target.value)}>{sites.map((site) => <option key={site.id} value={site.id}>{site.displayName}</option>)}</select><input value={selectedBookUrl} onChange={(event) => setSelectedBookUrl(event.target.value)} /><button onClick={parseUrl}>解析目录</button><button className="primary" onClick={onDownload}>开始下载</button></div>{importedBook && <div className="bookSummary">{importedBook.coverUrl && <img src={importedBook.coverUrl} alt="" />}<div><strong>{importedBook.title}</strong><span>{[importedBook.author, importedBook.category, importedBook.status].filter(Boolean).join(' · ')}</span><p>{importedBook.description}</p></div></div>}<CatalogPreview chapters={catalogPreview} /></section></div>;
+  return <div className="stack"><section className="panel"><h2>聚合搜索</h2><div className="sitePicker">{searchableSites.map((site) => <label key={site.id}><input type="checkbox" checked={selectedSiteIds.includes(site.id)} onChange={() => toggleSite(site.id)} />{site.displayName}</label>)}</div><div className="formRow"><input placeholder="书名或作者" value={keyword} onChange={(event) => setKeyword(event.target.value)} /><button onClick={search} disabled={selectedSiteIds.length === 0 || !keyword.trim()}>同步搜索</button></div><div className="searchGroups">{searchGroups.map((group) => <section className="sourceGroup" key={group.siteId}><header><strong>{group.displayName}</strong><span>{group.error ? group.error : `${group.results.length} 条结果`}</span></header><div className="resultList">{group.results.map((result) => <button key={`${result.siteId}:${result.url}`} onClick={() => setSelectedBookUrl(result.url)}><strong>{result.title}</strong><span>{result.author ?? result.url}</span></button>)}</div></section>)}</div></section><section className="panel"><h2>URL 导入</h2><div className="formRow"><select value={urlSiteId} onChange={(event) => setUrlSiteId(event.target.value)}>{sites.map((site) => <option key={site.id} value={site.id}>{site.displayName}</option>)}</select><input value={selectedBookUrl} onChange={(event) => setSelectedBookUrl(event.target.value)} placeholder="https://source.example/path/book.html" /><button onClick={parseUrl} disabled={!selectedBookUrl.trim()}>解析目录</button><button className="primary" onClick={onDownload} disabled={!selectedBookUrl.trim()}>开始下载</button></div>{importedBook && <div className="bookSummary">{importedBook.coverUrl && <img src={importedBook.coverUrl} alt="" />}<div><strong>{importedBook.title}</strong><span>{[importedBook.author, importedBook.category, importedBook.status].filter(Boolean).join(' · ')}</span><p>{importedBook.description}</p></div></div>}<CatalogPreview chapters={catalogPreview} /></section></div>;
 }
 
 function CatalogPreview({ chapters }: { chapters: ChapterRef[] }) {

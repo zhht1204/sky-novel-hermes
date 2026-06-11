@@ -9,7 +9,6 @@ import { WebSocketServer } from 'ws';
 import { createLiteLlmClientFromEnv } from '@sky-novel-hermes/ai';
 import { safeFileName, toMarkdown, toPlainText, toZip } from '@sky-novel-hermes/exporter';
 import type { AiUsageRecord, ChapterContent } from '@sky-novel-hermes/shared';
-import { SAMPLE_BOOK_URL } from '@sky-novel-hermes/shared';
 import { getSite, getSites } from '@sky-novel-hermes/sites';
 import { HermesDatabase } from '@sky-novel-hermes/storage';
 import { loadConfig, normalizeTranslationSettings, saveSettings, type AppSettings } from './config.js';
@@ -160,19 +159,6 @@ app.post('/api/import-url', async (req, res, next) => {
     await db.upsertBook(book);
     await db.upsertCatalog(catalog);
     res.json({ book, catalog, catalogCount: catalog.length });
-  } catch (error) {
-    next(error);
-  }
-});
-
-app.post('/api/sample/import', async (_req, res, next) => {
-  try {
-    const site = getSite('quanben5-big5');
-    const book = await site.getBookInfo({ url: SAMPLE_BOOK_URL });
-    const catalog = await site.getCatalog({ bookUrl: SAMPLE_BOOK_URL });
-    await db.upsertBook(book);
-    await db.upsertCatalog(catalog);
-    res.json({ book, catalogCount: catalog.length });
   } catch (error) {
     next(error);
   }

@@ -261,8 +261,6 @@ export interface ServiceStatus {
   }>;
 }
 
-export const SAMPLE_BOOK_URL = 'https://big5.quanben5.io/n/moshi_wodunliaoyiwanwuzi/xiaoshuo.html';
-
 export function nowIso(): string {
   return new Date().toISOString();
 }

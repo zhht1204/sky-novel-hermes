@@ -2,7 +2,7 @@
 
 Sky Novel Hermes is a Tauri desktop app for lawful novel download management, local library organization, AI-assisted analysis, multilingual post-processing, preview, and export packaging.
 
-The GUI is built with Tauri, Vite, React, and TypeScript. Crawling, queueing, storage, exports, and AI analysis run in a Node.js v22 local service. The first hard-coded site adapter targets `https://big5.quanben5.io`.
+The GUI is built with Tauri, Vite, React, and TypeScript. Crawling, queueing, storage, exports, and AI analysis run in a Node.js v22 local service. The hard-coded Quanben5 adapters target the Big5 and Simplified Quanben5 source sites.
 
 ## Requirements
 
@@ -57,15 +57,9 @@ Language detection runs after downloads complete and can also be triggered manua
 
 The AI Configuration page shows locally recorded usage for each AI request, plus aggregate totals and per-task totals when the provider returns OpenAI-compatible `usage` fields. Provider account cycle balance or remaining quota is not calculated unless the upstream service exposes that information through a compatible API.
 
-## First Sample
+## Source Adapters
 
-The initial sample source is:
-
-```text
-https://big5.quanben5.io/n/moshi_wodunliaoyiwanwuzi/xiaoshuo.html
-```
-
-The `quanben5-big5` adapter extracts book metadata, catalog entries, and authorized chapter content. Downloader behavior is rate-limited and records source attribution.
+The Quanben5 adapters extract book metadata, catalog entries, and authorized chapter content from user-provided source URLs. Downloader behavior is rate-limited and records source attribution.
 
 ## Main Scripts
 
