@@ -1,6 +1,6 @@
 import { Archive, BookOpen, BrainCircuit, Download, Eye, Home, Languages, Package, Pause, Play, RotateCcw, Search, Settings, Sparkles, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { apiGet, apiPost, serviceWsUrl } from '../api.js';
+import { apiGet, apiPost, serviceUrl, serviceWsUrl } from '../api.js';
 import type { AggregatedSearchResponse, AiUsageRecord, AiUsageSummary, BookInfo, ChapterContent, ChapterRef, ChapterTranslation, DownloadFailure, DownloadTask, ExportResponse, LanguageProfile, ServiceSettings, SiteSearchResultGroup, SiteSummary, TranslationFailure, TranslationTask, UrlImportResponse } from '../types.js';
 
 const sampleUrl = 'https://big5.quanben5.io/n/moshi_wodunliaoyiwanwuzi/xiaoshuo.html';
@@ -27,6 +27,7 @@ export function App() {
   const [message, setMessage] = useState('准备就绪');
 
   async function refresh() {
+    setMessage(`正在连接 ${serviceUrl()}`);
     const [siteList, taskList, translationTaskList, bookList] = await Promise.all([
       apiGet<SiteSummary[]>('/api/sites'),
       apiGet<DownloadTask[]>('/api/downloads'),
@@ -37,11 +38,21 @@ export function App() {
     setTasks(taskList);
     setTranslationTasks(translationTaskList);
     setBooks(bookList);
+    setMessage(`已连接 ${serviceUrl()}`);
+  }
+
+  async function refreshWithMessage() {
+    try {
+      await refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
   }
 
   useEffect(() => {
-    refresh().catch((error) => setMessage(error.message));
+    refreshWithMessage();
     const ws = new WebSocket(serviceWsUrl());
+    ws.onerror = () => setMessage(`WebSocket 无法连接 ${serviceWsUrl()}`);
     ws.onmessage = (event) => {
       const payload = JSON.parse(event.data);
       if (payload.type === 'task') {
@@ -104,7 +115,7 @@ export function App() {
             <strong>{nav.find((item) => item.id === active)?.label}</strong>
             <span>{message}</span>
           </div>
-          <button className="primary" onClick={() => refresh()}>刷新</button>
+          <button className="primary" onClick={refreshWithMessage}>刷新</button>
         </header>
         {active === 'home' && <HomeView sites={sites} tasks={tasks} books={books} onImport={importSample} />}
         {active === 'search' && <SearchView sites={sites} selectedBookUrl={selectedBookUrl} setSelectedBookUrl={setSelectedBookUrl} onImportUrl={importUrl} onDownload={startDownload} />}
