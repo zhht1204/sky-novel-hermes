@@ -12,13 +12,14 @@ import type { ChapterContent } from '@sky-novel-hermes/shared';
 import { SAMPLE_BOOK_URL } from '@sky-novel-hermes/shared';
 import { getSite, getSites } from '@sky-novel-hermes/sites';
 import { HermesDatabase } from '@sky-novel-hermes/storage';
-import { loadConfig } from './config.js';
+import { loadConfig, saveSettings, type AppSettings } from './config.js';
 import { DownloadManager } from './downloadManager.js';
 
 const startedAt = new Date().toISOString();
 const config = loadConfig();
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
-const db = new HermesDatabase(config.dbPath);
+let settings: AppSettings = { storage: config.storage };
+let db = await HermesDatabase.connect(settings.storage);
 const ai = createLiteLlmClientFromEnv();
 const downloads = new DownloadManager(db, getSite);
 
@@ -34,8 +35,29 @@ app.get('/api/status', (_req, res) => {
     name: 'sky-novel-hermes-node-service',
     version: '0.1.0',
     startedAt,
+    storage: { backend: db.backend },
     sites: getSites().map((site) => ({ id: site.id, displayName: site.displayName, baseUrl: site.baseUrl, capabilities: site.capabilities })),
   });
+});
+
+app.get('/api/settings', (_req, res) => {
+  res.json({ ...settings, activeStorageBackend: db.backend });
+});
+
+app.post('/api/settings', async (req, res, next) => {
+  try {
+    const nextSettings = normalizeSettings(req.body);
+    const nextDb = await HermesDatabase.connect(nextSettings.storage);
+    const previousDb = db;
+    settings = nextSettings;
+    db = nextDb;
+    downloads.setDatabase(nextDb);
+    saveSettings(config.settingsPath, nextSettings);
+    await previousDb.close();
+    res.json({ ...settings, activeStorageBackend: db.backend });
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.get('/api/sites', (_req, res) => {
@@ -107,7 +129,7 @@ app.post('/api/search', async (req, res, next) => {
 app.post('/api/sites/:siteId/book-info', async (req, res, next) => {
   try {
     const book = await getSite(req.params.siteId).getBookInfo({ url: req.body.url });
-    db.upsertBook(book);
+    await db.upsertBook(book);
     res.json(book);
   } catch (error) {
     next(error);
@@ -117,7 +139,7 @@ app.post('/api/sites/:siteId/book-info', async (req, res, next) => {
 app.post('/api/sites/:siteId/catalog', async (req, res, next) => {
   try {
     const catalog = await getSite(req.params.siteId).getCatalog({ bookUrl: req.body.bookUrl });
-    db.upsertCatalog(catalog);
+    await db.upsertCatalog(catalog);
     res.json(catalog);
   } catch (error) {
     next(error);
@@ -131,8 +153,8 @@ app.post('/api/import-url', async (req, res, next) => {
     const site = siteId ? getSite(siteId) : getSiteForUrl(url);
     const book = await site.getBookInfo({ url });
     const catalog = await site.getCatalog({ bookUrl: url });
-    db.upsertBook(book);
-    db.upsertCatalog(catalog);
+    await db.upsertBook(book);
+    await db.upsertCatalog(catalog);
     res.json({ book, catalog, catalogCount: catalog.length });
   } catch (error) {
     next(error);
@@ -144,41 +166,57 @@ app.post('/api/sample/import', async (_req, res, next) => {
     const site = getSite('quanben5-big5');
     const book = await site.getBookInfo({ url: SAMPLE_BOOK_URL });
     const catalog = await site.getCatalog({ bookUrl: SAMPLE_BOOK_URL });
-    db.upsertBook(book);
-    db.upsertCatalog(catalog);
+    await db.upsertBook(book);
+    await db.upsertCatalog(catalog);
     res.json({ book, catalogCount: catalog.length });
   } catch (error) {
     next(error);
   }
 });
 
-app.post('/api/downloads', (req, res, next) => {
+app.post('/api/downloads', async (req, res, next) => {
   try {
-    res.status(202).json(downloads.createTask(req.body.siteId, req.body.bookUrl));
+    res.status(202).json(await downloads.createTask(req.body.siteId, req.body.bookUrl));
   } catch (error) {
     next(error);
   }
 });
 
-app.get('/api/downloads', (_req, res) => {
-  res.json(db.listTasks());
-});
-
-app.get('/api/library/books', (_req, res) => {
-  res.json(db.listBooks());
-});
-
-app.get('/api/library/chapters', (req, res) => {
-  res.json(db.listChapters(String(req.query.bookUrl ?? '')));
-});
-
-app.get('/api/library/chapter', (req, res) => {
-  const chapter = db.getChapter(String(req.query.sourceUrl ?? ''));
-  if (!chapter) {
-    res.status(404).json({ error: 'Chapter not found' });
-    return;
+app.get('/api/downloads', async (_req, res, next) => {
+  try {
+    res.json(await db.listTasks());
+  } catch (error) {
+    next(error);
   }
-  res.json(chapter);
+});
+
+app.get('/api/library/books', async (_req, res, next) => {
+  try {
+    res.json(await db.listBooks());
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/library/chapters', async (req, res, next) => {
+  try {
+    res.json(await db.listChapters(String(req.query.bookUrl ?? '')));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/library/chapter', async (req, res, next) => {
+  try {
+    const chapter = await db.getChapter(String(req.query.sourceUrl ?? ''));
+    if (!chapter) {
+      res.status(404).json({ error: 'Chapter not found' });
+      return;
+    }
+    res.json(chapter);
+  } catch (error) {
+    next(error);
+  }
 });
 
 app.post('/api/analysis/summary', async (req, res, next) => {
@@ -193,15 +231,13 @@ app.post('/api/export', async (req, res, next) => {
   try {
     const bookUrl = String(req.body.bookUrl);
     const format = String(req.body.format ?? 'markdown');
-    const book = db.listBooks().find((candidate) => candidate.canonicalUrl === bookUrl || candidate.sourceUrl === bookUrl);
+    const book = (await db.listBooks()).find((candidate) => candidate.canonicalUrl === bookUrl || candidate.sourceUrl === bookUrl);
     if (!book) {
       res.status(404).json({ error: 'Book not found' });
       return;
     }
-    const chapters = db.listChapters(bookUrl).flatMap((chapter) => {
-      const content = db.getChapter(chapter.sourceUrl);
-      return content ? [content] : [];
-    }) satisfies ChapterContent[];
+    const chapterRefs = await db.listChapters(bookUrl);
+    const chapters = (await Promise.all(chapterRefs.map((chapter) => db.getChapter(chapter.sourceUrl)))).filter((chapter): chapter is ChapterContent => Boolean(chapter));
     const baseName = safeFileName(book.title || 'novel');
     if (format === 'zip') {
       const zip = await toZip({ [`${baseName}.md`]: toMarkdown(book, chapters), [`${baseName}.txt`]: toPlainText(book, chapters) });
@@ -245,4 +281,19 @@ function getSiteForUrl(url: string) {
     throw new Error(`No registered site supports URL: ${url}`);
   }
   return site;
+}
+
+function normalizeSettings(input: unknown): AppSettings {
+  const body = input as Partial<AppSettings> | undefined;
+  const storage = body?.storage;
+  const backend = storage?.backend === 'postgres' ? 'postgres' : 'sqlite';
+  const sqlitePath = storage?.sqlitePath || settings.storage.sqlitePath;
+  const postgresUrl = storage?.postgresUrl ?? settings.storage.postgresUrl;
+  if (backend === 'sqlite' && !sqlitePath) {
+    throw new Error('SQLite path is required');
+  }
+  if (backend === 'postgres' && !postgresUrl) {
+    throw new Error('PostgreSQL connection URL is required');
+  }
+  return { storage: { backend, sqlitePath, postgresUrl } };
 }

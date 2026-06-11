@@ -60,6 +60,17 @@ export interface UrlImportResponse {
   catalogCount: number;
 }
 
+export type StorageBackend = 'sqlite' | 'postgres';
+
+export interface ServiceSettings {
+  storage: {
+    backend: StorageBackend;
+    sqlitePath?: string;
+    postgresUrl?: string;
+  };
+  activeStorageBackend?: StorageBackend;
+}
+
 export interface DownloadTask {
   id: string;
   siteId: string;

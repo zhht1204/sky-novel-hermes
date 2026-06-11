@@ -28,7 +28,7 @@ The desktop shell uses Tauri. Crawling, download queues, storage orchestration, 
 - `apps/node-service`: Node.js v22 local service for crawling, queueing, storage, AI, and exports.
 - `packages/shared`: shared TypeScript types and validation schemas.
 - `packages/sites`: hard-coded site adapters.
-- `packages/storage`: SQLite schema and repositories.
+- `packages/storage`: selectable SQLite/PostgreSQL schema and repositories for metadata/cache persistence.
 - `packages/ai`: LiteLLM/OpenAI-compatible client and analysis workflows.
 - `packages/exporter`: TXT, Markdown, ZIP, and future EPUB export logic.
 
@@ -69,6 +69,7 @@ The adapter extracts metadata, catalog records, and authorized chapter content. 
 - Keep site-specific selectors isolated inside each site module.
 - Do not hard-code secrets.
 - Store LiteLLM configuration in environment variables or local app settings.
+- Keep SQLite available as the default local cache; PostgreSQL can be selected in Settings or configured with `HERMES_STORAGE_BACKEND=postgres` plus `HERMES_DATABASE_URL` or `DATABASE_URL`.
 - Keep crawler logs structured and visible in the Download Manager.
 - Use small, testable parser functions with HTML fixtures.
 

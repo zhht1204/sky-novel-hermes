@@ -1,7 +1,7 @@
 import { Archive, BookOpen, Download, Eye, Home, Package, Search, Settings, Sparkles } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { apiGet, apiPost, serviceWsUrl } from '../api.js';
-import type { AggregatedSearchResponse, BookInfo, ChapterContent, ChapterRef, DownloadTask, SiteSearchResultGroup, SiteSummary, UrlImportResponse } from '../types.js';
+import type { AggregatedSearchResponse, BookInfo, ChapterContent, ChapterRef, DownloadTask, ServiceSettings, SiteSearchResultGroup, SiteSummary, UrlImportResponse } from '../types.js';
 
 const sampleUrl = 'https://big5.quanben5.io/n/moshi_wodunliaoyiwanwuzi/xiaoshuo.html';
 const nav = [
@@ -192,5 +192,21 @@ function PreviewView({ book, chapters }: { book?: BookInfo; chapters: ChapterRef
 }
 
 function SettingsView() {
-  return <section className="panel"><h2>服务设置</h2><p>Node sidecar: http://127.0.0.1:17891</p><p>AI 接入通过外部 LiteLLM/OpenAI-compatible API 环境变量配置。</p></section>;
+  const [settings, setSettings] = useState<ServiceSettings | undefined>();
+  const [message, setMessage] = useState('');
+
+  useEffect(() => {
+    apiGet<ServiceSettings>('/api/settings').then(setSettings).catch((error) => setMessage(error.message));
+  }, []);
+
+  async function save() {
+    if (!settings) return;
+    const saved = await apiPost<ServiceSettings>('/api/settings', settings);
+    setSettings(saved);
+    setMessage(`已切换到 ${saved.activeStorageBackend === 'postgres' ? 'PostgreSQL' : 'SQLite'}`);
+  }
+
+  if (!settings) return <section className="panel"><h2>服务设置</h2><p>{message || '正在读取设置...'}</p></section>;
+
+  return <section className="panel"><h2>服务设置</h2><div className="settingsGrid"><label><span>存储后端</span><select value={settings.storage.backend} onChange={(event) => setSettings({ ...settings, storage: { ...settings.storage, backend: event.target.value === 'postgres' ? 'postgres' : 'sqlite' } })}><option value="sqlite">SQLite 本地文件</option><option value="postgres">PostgreSQL 数据库</option></select></label><label><span>SQLite 文件</span><input value={settings.storage.sqlitePath ?? ''} onChange={(event) => setSettings({ ...settings, storage: { ...settings.storage, sqlitePath: event.target.value } })} /></label><label><span>PostgreSQL URL</span><input value={settings.storage.postgresUrl ?? ''} onChange={(event) => setSettings({ ...settings, storage: { ...settings.storage, postgresUrl: event.target.value } })} placeholder="postgres://user:password@host:5432/database" /></label></div><div className="formRow"><button className="primary" onClick={save}>保存存储设置</button><span>当前：{settings.activeStorageBackend === 'postgres' ? 'PostgreSQL' : 'SQLite'}</span></div><p>{message || '元数据、目录缓存、章节缓存和下载任务会写入所选后端。'}</p><p>AI 接入通过外部 LiteLLM/OpenAI-compatible API 环境变量配置。</p></section>;
 }

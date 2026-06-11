@@ -9,6 +9,7 @@ The GUI is built with Tauri, Vite, React, and TypeScript. Crawling, queueing, st
 - Node.js 22+
 - pnpm 9+
 - Rust stable and Cargo for Tauri
+- Optional PostgreSQL 14+ if you do not want to use the default SQLite local cache
 - A running LiteLLM/OpenAI-compatible API endpoint if AI features are enabled
 
 ## Quick Start
@@ -17,6 +18,8 @@ The GUI is built with Tauri, Vite, React, and TypeScript. Crawling, queueing, st
 pnpm install
 pnpm dev
 ```
+
+The Node service stores cached metadata, catalogs, chapter content, and download tasks through a selectable storage backend. SQLite is the default and writes to `./storage/hermes.sqlite`. PostgreSQL can be enabled in the app Settings page, or by setting `HERMES_STORAGE_BACKEND=postgres` with `HERMES_DATABASE_URL` or `DATABASE_URL`. The service creates the required tables on startup.
 
 `pnpm dev` runs the Node service and Tauri desktop app in parallel. You can also run them in two terminals when debugging one side at a time:
 
