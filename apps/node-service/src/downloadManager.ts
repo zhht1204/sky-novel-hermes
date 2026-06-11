@@ -121,6 +121,9 @@ export class DownloadManager extends EventEmitter {
       message: this.activeTaskIds.has(task.id) ? 'Cancel requested' : 'Cancelled',
     };
     await this.updateTask(cancelledTask);
+    if (!this.activeTaskIds.has(task.id)) {
+      await this.db.deleteBook(task.bookUrl);
+    }
     return cancelledTask;
   }
 
@@ -298,6 +301,7 @@ export class DownloadManager extends EventEmitter {
       this.cancelRequestedTaskIds.delete(task.id);
       this.pauseRequestedTaskIds.delete(task.id);
       await this.updateTask({ ...task, status: 'cancelled', updatedAt: nowIso(), message: 'Cancelled' });
+      await this.db.deleteBook(task.bookUrl);
       return true;
     }
     if (!this.pauseRequestedTaskIds.has(task.id)) return false;

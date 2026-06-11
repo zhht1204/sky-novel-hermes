@@ -20,6 +20,12 @@ export async function apiPost<T>(path: string, body: unknown = {}): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+export async function apiDelete<T>(path: string): Promise<T> {
+  const response = await fetchJson(`${SERVICE_URL}${path}`, { method: 'DELETE' });
+  if (!response.ok) throw new Error(await readErrorMessage(response));
+  return response.json() as Promise<T>;
+}
+
 export function serviceWsUrl(): string {
   return `${SERVICE_URL.replace(/^http/, 'ws')}/ws`;
 }

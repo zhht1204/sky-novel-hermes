@@ -227,6 +227,24 @@ app.get('/api/library/books', async (_req, res, next) => {
   }
 });
 
+app.delete('/api/library/books', async (req, res, next) => {
+  try {
+    const bookUrl = String(req.query.bookUrl ?? '').trim();
+    if (!bookUrl) {
+      res.status(400).json({ error: 'bookUrl is required' });
+      return;
+    }
+    const deleted = await db.deleteBook(bookUrl);
+    if (!deleted) {
+      res.status(404).json({ error: 'Book not found' });
+      return;
+    }
+    res.json({ deleted: true, bookUrl });
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get('/api/library/chapters', async (req, res, next) => {
   try {
     res.json(await db.listChapters(String(req.query.bookUrl ?? '')));

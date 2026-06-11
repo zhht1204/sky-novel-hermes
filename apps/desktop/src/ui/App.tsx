@@ -1,6 +1,6 @@
-import { Archive, BookOpen, BrainCircuit, Download, Eye, Home, Languages, Package, Pause, Play, RotateCcw, Search, Settings, X } from 'lucide-react';
+import { Archive, BookOpen, BrainCircuit, Download, Eye, Home, Languages, Package, Pause, Play, RotateCcw, Search, Settings, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { apiGet, apiPost, serviceUrl, serviceWsUrl } from '../api.js';
+import { apiDelete, apiGet, apiPost, serviceUrl, serviceWsUrl } from '../api.js';
 import type { AggregatedSearchResponse, AiUsageRecord, AiUsageSummary, BookInfo, ChapterContent, ChapterRef, ChapterTranslation, DownloadFailure, DownloadTask, ExportResponse, LanguageProfile, ServiceSettings, SiteSearchResultGroup, SiteSummary, TranslationFailure, TranslationTask, UrlImportResponse } from '../types.js';
 
 const nav = [
@@ -127,7 +127,7 @@ export function App() {
         {active === 'search' && <SearchView sites={sites} selectedBookUrl={selectedBookUrl} setSelectedBookUrl={setSelectedBookUrl} onImportUrl={importUrl} onDownload={startDownload} />}
         {active === 'downloads' && <DownloadsView tasks={tasks} refresh={refresh} />}
         {active === 'translations' && <TranslationsView books={books} selectedBookUrl={selectedBookUrl} setSelectedBookUrl={setSelectedBookUrl} tasks={translationTasks} refresh={refresh} />}
-        {active === 'library' && <LibraryView books={books} setSelectedBookUrl={setSelectedBookUrl} setActive={setActive} />}
+        {active === 'library' && <LibraryView books={books} selectedBookUrl={selectedBookUrl} setSelectedBookUrl={setSelectedBookUrl} setActive={setActive} refresh={refresh} setMessage={setMessage} />}
         {active === 'package' && <PackageView books={books} selectedBookUrl={selectedBookUrl} setSelectedBookUrl={setSelectedBookUrl} />}
         {active === 'preview' && <PreviewView book={selectedBook} chapters={chapters} />}
         {active === 'ai' && <AiUsageView />}
@@ -330,8 +330,24 @@ function TranslationFailureList({ failures }: { failures: TranslationFailure[] }
   return <div className="failureList"><header><strong>翻译失败章节</strong><span>{failures.length} 条</span></header><table><thead><tr><th>序号</th><th>章节</th><th>目标语言</th><th>尝试</th><th>错误</th></tr></thead><tbody>{failures.map((failure) => <tr key={failure.chapterUrl}><td>{failure.chapterIndex}</td><td>{failure.title}</td><td>{failure.targetLanguage}</td><td>{failure.attempts}</td><td>{failure.error}</td></tr>)}</tbody></table></div>;
 }
 
-function LibraryView({ books, setSelectedBookUrl, setActive }: { books: BookInfo[]; setSelectedBookUrl: (value: string) => void; setActive: (value: string) => void }) {
-  return <section className="panel"><h2>本地书库</h2><table><thead><tr><th>书名</th><th>作者</th><th>分类</th><th>状态</th></tr></thead><tbody>{books.map((book) => <tr key={book.canonicalUrl} onClick={() => { setSelectedBookUrl(book.canonicalUrl); setActive('preview'); }}><td>{book.title}</td><td>{book.author}</td><td>{book.category}</td><td>{book.status}</td></tr>)}</tbody></table></section>;
+function LibraryView({ books, selectedBookUrl, setSelectedBookUrl, setActive, refresh, setMessage }: { books: BookInfo[]; selectedBookUrl: string; setSelectedBookUrl: (value: string) => void; setActive: (value: string) => void; refresh: () => Promise<void>; setMessage: (value: string) => void }) {
+  async function deleteBook(book: BookInfo, event: React.MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    const confirmed = window.confirm(`删除《${book.title}》及其本地章节、译文和语言检测记录？`);
+    if (!confirmed) return;
+    try {
+      await apiDelete(`/api/library/books?bookUrl=${encodeURIComponent(book.canonicalUrl)}`);
+      if (selectedBookUrl === book.canonicalUrl || selectedBookUrl === book.sourceUrl) {
+        setSelectedBookUrl('');
+      }
+      setMessage(`已删除《${book.title}》`);
+      await refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  return <section className="panel"><h2>本地书库</h2><table><thead><tr><th>书名</th><th>作者</th><th>分类</th><th>状态</th><th>操作</th></tr></thead><tbody>{books.map((book) => <tr key={book.canonicalUrl} onClick={() => { setSelectedBookUrl(book.canonicalUrl); setActive('preview'); }}><td>{book.title}</td><td>{book.author}</td><td>{book.category}</td><td>{book.status}</td><td><div className="tableActions"><button className="danger" onClick={(event) => deleteBook(book, event)} title="删除本地书籍"><Trash2 size={14} />删除</button></div></td></tr>)}</tbody></table>{books.length === 0 && <p>还没有已下载或已导入的书籍。</p>}</section>;
 }
 
 function PackageView({ books, selectedBookUrl, setSelectedBookUrl }: { books: BookInfo[]; selectedBookUrl: string; setSelectedBookUrl: (value: string) => void }) {

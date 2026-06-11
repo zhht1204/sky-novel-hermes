@@ -110,6 +110,7 @@ tbody tr { cursor: pointer; }
 tbody tr:hover { background: #f6f8fa; }
 .tableActions { display: flex; flex-wrap: wrap; gap: 8px; }
 .tableActions button { border: 0; border-radius: 6px; background: #e5ebf0; color: #1d252c; padding: 6px 9px; cursor: pointer; display: inline-flex; align-items: center; gap: 5px; }
+.tableActions button.danger { background: #fae2e2; color: #b42318; }
 .tableActions button:disabled { cursor: not-allowed; opacity: 0.5; }
 
 .badge { padding: 3px 8px; border-radius: 999px; background: #e5ebf0; font-size: 12px; }
