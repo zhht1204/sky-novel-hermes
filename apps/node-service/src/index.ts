@@ -427,7 +427,10 @@ app.post('/api/export', async (req, res, next) => {
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   const message = error instanceof Error ? error.message : String(error);
   logger.error({ error }, message);
-  res.status(error instanceof ActiveTaskError || error instanceof ActiveTranslationTaskError ? 409 : 500).json({ error: message });
+  const status = error instanceof HttpStatusError
+    ? error.statusCode
+    : error instanceof ActiveTaskError || error instanceof ActiveTranslationTaskError ? 409 : 500;
+  res.status(status).json({ error: message });
 });
 
 const server = createServer(app);
@@ -455,15 +458,31 @@ server.listen(config.port, config.host, () => {
 });
 
 function getSiteForUrl(url: string) {
-  const target = new URL(url);
+  if (!url) {
+    throw new HttpStatusError(400, '请输入 URL');
+  }
+
+  let target: URL;
+  try {
+    target = new URL(url);
+  } catch {
+    throw new HttpStatusError(400, 'URL 格式不正确');
+  }
+
   const site = getSites().find((candidate) => {
     const base = new URL(candidate.baseUrl);
-    return target.protocol === base.protocol && target.hostname === base.hostname;
+    return target.hostname === base.hostname;
   });
   if (!site) {
-    throw new Error(`No registered site supports URL: ${url}`);
+    throw new HttpStatusError(400, `不支持此站点：${target.hostname}`);
   }
   return site;
+}
+
+class HttpStatusError extends Error {
+  constructor(public readonly statusCode: number, message: string) {
+    super(message);
+  }
 }
 
 function normalizeSettings(input: unknown): AppSettings {

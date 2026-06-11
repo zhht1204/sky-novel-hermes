@@ -75,12 +75,17 @@ export function App() {
 
   async function importUrl(url: string): Promise<UrlImportResponse> {
     setMessage('正在解析 URL 并导入目录');
-    const result = await apiPost<UrlImportResponse>('/api/import-url', { url });
-    setSelectedBookUrl(result.book.canonicalUrl);
-    setChapters(result.catalog);
-    setMessage(`已导入《${result.book.title}》目录 ${result.catalogCount} 章`);
-    await refresh();
-    return result;
+    try {
+      const result = await apiPost<UrlImportResponse>('/api/import-url', { url });
+      setSelectedBookUrl(result.book.canonicalUrl);
+      setChapters(result.catalog);
+      setMessage(`已导入《${result.book.title}》目录 ${result.catalogCount} 章`);
+      await refresh();
+      return result;
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+      throw error;
+    }
   }
 
   async function startDownload() {
@@ -163,9 +168,14 @@ function SearchView({ sites, selectedBookUrl, setSelectedBookUrl, onImportUrl, o
   }
 
   async function parseUrl() {
-    const result = await onImportUrl(selectedBookUrl);
-    setImportedBook(result.book);
-    setCatalogPreview(result.catalog);
+    try {
+      const result = await onImportUrl(selectedBookUrl);
+      setImportedBook(result.book);
+      setCatalogPreview(result.catalog);
+    } catch {
+      setImportedBook(undefined);
+      setCatalogPreview([]);
+    }
   }
 
   return <div className="stack"><section className="panel"><h2>聚合搜索</h2><div className="sitePicker">{searchableSites.map((site) => <label key={site.id}><input type="checkbox" checked={selectedSiteIds.includes(site.id)} onChange={() => toggleSite(site.id)} />{site.displayName}</label>)}</div><div className="formRow"><input placeholder="书名或作者" value={keyword} onChange={(event) => setKeyword(event.target.value)} /><button onClick={search} disabled={selectedSiteIds.length === 0 || !keyword.trim()}>同步搜索</button></div><div className="searchGroups">{searchGroups.map((group) => <section className="sourceGroup" key={group.siteId}><header><strong>{group.displayName}</strong><span>{group.error ? group.error : `${group.results.length} 条结果`}</span></header><div className="resultList">{group.results.map((result) => <button key={`${result.siteId}:${result.url}`} onClick={() => setSelectedBookUrl(result.url)}><strong>{result.title}</strong><span>{result.author ?? result.url}</span></button>)}</div></section>)}</div></section><section className="panel"><h2>URL 导入</h2><div className="formRow"><input value={selectedBookUrl} onChange={(event) => setSelectedBookUrl(event.target.value)} placeholder="https://source.example/path/book.html" /><button onClick={parseUrl} disabled={!selectedBookUrl.trim()}>解析目录</button><button className="primary" onClick={onDownload} disabled={!selectedBookUrl.trim()}>开始下载</button></div>{importedBook && <div className="bookSummary">{importedBook.coverUrl && <img src={importedBook.coverUrl} alt="" />}<div><strong>{importedBook.title}</strong><span>{[importedBook.author, importedBook.category, importedBook.status].filter(Boolean).join(' · ')}</span><p>{importedBook.description}</p></div></div>}<CatalogPreview chapters={catalogPreview} /></section></div>;
@@ -176,7 +186,7 @@ function matchSiteByUrl(sites: SiteSummary[], url: string): SiteSummary | undefi
     const target = new URL(url);
     return sites.find((site) => {
       const base = new URL(site.baseUrl);
-      return target.protocol === base.protocol && target.hostname === base.hostname;
+      return target.hostname === base.hostname;
     });
   } catch {
     return undefined;
