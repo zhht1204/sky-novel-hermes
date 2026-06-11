@@ -136,6 +136,76 @@ export const DownloadFailureSchema = z.object({
 
 export type DownloadFailure = z.infer<typeof DownloadFailureSchema>;
 
+export const LanguageProfileSchema = z.object({
+  bookUrl: z.string().url(),
+  language: z.string().min(1),
+  confidence: z.number().min(0).max(1),
+  sampleSize: z.number().int().nonnegative(),
+  detectedAt: z.string(),
+  detector: z.string(),
+});
+
+export type LanguageProfile = z.infer<typeof LanguageProfileSchema>;
+
+export const ChapterTranslationSchema = z.object({
+  sourceUrl: z.string().url(),
+  bookUrl: z.string().url(),
+  chapterIndex: z.number().int().nonnegative(),
+  title: z.string(),
+  sourceLanguage: z.string().min(1),
+  targetLanguage: z.string().min(1),
+  text: z.string(),
+  model: z.string(),
+  promptHash: z.string(),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+});
+
+export type ChapterTranslation = z.infer<typeof ChapterTranslationSchema>;
+
+export const TranslationStatusSchema = DownloadStatusSchema;
+export type TranslationStatus = z.infer<typeof TranslationStatusSchema>;
+
+export const TranslationTaskSchema = z.object({
+  id: z.string(),
+  bookUrl: z.string().url(),
+  sourceLanguage: z.string().min(1),
+  targetLanguage: z.string().min(1),
+  status: TranslationStatusSchema,
+  totalChapters: z.number().int().nonnegative(),
+  completedChapters: z.number().int().nonnegative(),
+  failedChapters: z.number().int().nonnegative(),
+  force: z.boolean().default(false),
+  createdAt: z.string(),
+  updatedAt: z.string(),
+  message: z.string().optional(),
+});
+
+export type TranslationTask = z.infer<typeof TranslationTaskSchema>;
+
+export const TranslationFailureSchema = z.object({
+  taskId: z.string(),
+  bookUrl: z.string().url(),
+  chapterUrl: z.string().url(),
+  chapterIndex: z.number().int().nonnegative(),
+  title: z.string(),
+  targetLanguage: z.string().min(1),
+  attempts: z.number().int().nonnegative(),
+  error: z.string(),
+  lastFailedAt: z.string(),
+});
+
+export type TranslationFailure = z.infer<typeof TranslationFailureSchema>;
+
+export const TranslationSettingsSchema = z.object({
+  defaultTargetLanguage: z.string().min(1),
+  defaultPrompt: z.string().min(1),
+  maxChunkChars: z.number().int().positive(),
+  autoRetryAttempts: z.number().int().nonnegative(),
+});
+
+export type TranslationSettings = z.infer<typeof TranslationSettingsSchema>;
+
 export const AnalysisKindSchema = z.enum(['metadata', 'chapter-summary', 'book-summary', 'quality-check']);
 export type AnalysisKind = z.infer<typeof AnalysisKindSchema>;
 

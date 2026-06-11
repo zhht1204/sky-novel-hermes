@@ -11,6 +11,7 @@ export class DownloadManager extends EventEmitter {
   private autoRetryAttempts: number;
   private readonly activeTaskIds = new Set<string>();
   private readonly pauseRequestedTaskIds = new Set<string>();
+  private readonly cancelRequestedTaskIds = new Set<string>();
 
   constructor(private db: HermesDatabase, private readonly getSite: (siteId: string) => NovelSiteAdapter, autoRetryAttempts = 1) {
     super();
@@ -104,6 +105,23 @@ export class DownloadManager extends EventEmitter {
     };
     await this.updateTask(pausedTask);
     return pausedTask;
+  }
+
+  async cancelTask(taskId: string): Promise<DownloadTask> {
+    const task = (await this.db.listTasks()).find((candidate) => candidate.id === taskId);
+    if (!task) throw new Error(`Download task not found: ${taskId}`);
+    if (task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') {
+      return task;
+    }
+    this.cancelRequestedTaskIds.add(task.id);
+    const cancelledTask: DownloadTask = {
+      ...task,
+      status: this.activeTaskIds.has(task.id) ? task.status : 'cancelled',
+      updatedAt: nowIso(),
+      message: this.activeTaskIds.has(task.id) ? 'Cancel requested' : 'Cancelled',
+    };
+    await this.updateTask(cancelledTask);
+    return cancelledTask;
   }
 
   private async runTask(task: DownloadTask): Promise<void> {
@@ -276,6 +294,12 @@ export class DownloadManager extends EventEmitter {
   }
 
   private async pauseIfRequested(task: DownloadTask): Promise<boolean> {
+    if (this.cancelRequestedTaskIds.has(task.id)) {
+      this.cancelRequestedTaskIds.delete(task.id);
+      this.pauseRequestedTaskIds.delete(task.id);
+      await this.updateTask({ ...task, status: 'cancelled', updatedAt: nowIso(), message: 'Cancelled' });
+      return true;
+    }
     if (!this.pauseRequestedTaskIds.has(task.id)) return false;
     this.pauseRequestedTaskIds.delete(task.id);
     await this.updateTask({ ...task, status: 'paused', updatedAt: nowIso(), message: 'Paused' });

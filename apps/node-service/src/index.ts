@@ -12,16 +12,18 @@ import type { ChapterContent } from '@sky-novel-hermes/shared';
 import { SAMPLE_BOOK_URL } from '@sky-novel-hermes/shared';
 import { getSite, getSites } from '@sky-novel-hermes/sites';
 import { HermesDatabase } from '@sky-novel-hermes/storage';
-import { loadConfig, saveSettings, type AppSettings } from './config.js';
+import { loadConfig, normalizeTranslationSettings, saveSettings, type AppSettings } from './config.js';
 import { ActiveTaskError, DownloadManager } from './downloadManager.js';
+import { ActiveTranslationTaskError, TranslationManager } from './translationManager.js';
 
 const startedAt = new Date().toISOString();
 const config = loadConfig();
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
-let settings: AppSettings = { storage: config.storage, exportDir: config.exportDir, autoRetryAttempts: config.autoRetryAttempts };
+let settings: AppSettings = { storage: config.storage, exportDir: config.exportDir, autoRetryAttempts: config.autoRetryAttempts, translation: config.translation };
 let db = await HermesDatabase.connect(settings.storage);
 const ai = createLiteLlmClientFromEnv();
 const downloads = new DownloadManager(db, getSite, settings.autoRetryAttempts);
+const translations = new TranslationManager(db, ai, () => settings.translation);
 
 mkdirSync(config.exportDir, { recursive: true });
 
@@ -52,6 +54,7 @@ app.post('/api/settings', async (req, res, next) => {
     settings = nextSettings;
     db = nextDb;
     downloads.setDatabase(nextDb);
+    translations.setDatabase(nextDb);
     downloads.setAutoRetryAttempts(nextSettings.autoRetryAttempts);
     saveSettings(config.settingsPath, nextSettings);
     await previousDb.close();
@@ -215,6 +218,14 @@ app.post('/api/downloads/:taskId/pause', async (req, res, next) => {
   }
 });
 
+app.post('/api/downloads/:taskId/cancel', async (req, res, next) => {
+  try {
+    res.json(await downloads.cancelTask(req.params.taskId));
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post('/api/downloads/:taskId/resume', async (req, res, next) => {
   try {
     res.status(202).json(await downloads.resumeTask(req.params.taskId));
@@ -252,6 +263,124 @@ app.get('/api/library/chapter', async (req, res, next) => {
   }
 });
 
+app.get('/api/library/language-profile', async (req, res, next) => {
+  try {
+    const bookUrl = String(req.query.bookUrl ?? '');
+    const profile = await db.getLanguageProfile(bookUrl);
+    if (!profile) {
+      res.status(404).json({ error: 'Language profile not found' });
+      return;
+    }
+    res.json(profile);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/library/language-profile/detect', async (req, res, next) => {
+  try {
+    const bookUrl = String(req.body.bookUrl ?? '');
+    await translations.detectBookLanguage(bookUrl);
+    const profile = await db.getLanguageProfile(bookUrl);
+    if (!profile) {
+      res.status(404).json({ error: 'No downloaded chapter text available for language detection' });
+      return;
+    }
+    res.json(profile);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/library/translation-languages', async (req, res, next) => {
+  try {
+    res.json(await db.listTranslationLanguages(String(req.query.bookUrl ?? '')));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/library/chapter-translation', async (req, res, next) => {
+  try {
+    const translation = await db.getTranslation(String(req.query.sourceUrl ?? ''), String(req.query.language ?? ''));
+    if (!translation) {
+      res.status(404).json({ error: 'Chapter translation not found' });
+      return;
+    }
+    res.json(translation);
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/library/chapter-translation/retranslate', async (req, res, next) => {
+  try {
+    res.status(202).json(await translations.retranslateChapter(String(req.body.sourceUrl ?? ''), String(req.body.targetLanguage ?? settings.translation.defaultTargetLanguage)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/translations/tasks', async (_req, res, next) => {
+  try {
+    res.json(await db.listTranslationTasks());
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/translations/tasks', async (req, res, next) => {
+  try {
+    res.status(202).json(await translations.createTask(
+      String(req.body.bookUrl ?? ''),
+      String(req.body.targetLanguage ?? settings.translation.defaultTargetLanguage),
+      { force: Boolean(req.body.force), sourceLanguage: typeof req.body.sourceLanguage === 'string' ? req.body.sourceLanguage : undefined },
+    ));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/translations/tasks/:taskId/failures', async (req, res, next) => {
+  try {
+    res.json(await db.listTranslationFailures(req.params.taskId));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/translations/tasks/:taskId/pause', async (req, res, next) => {
+  try {
+    res.json(await translations.pauseTask(req.params.taskId));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/translations/tasks/:taskId/resume', async (req, res, next) => {
+  try {
+    res.status(202).json(await translations.resumeTask(req.params.taskId));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/translations/tasks/:taskId/cancel', async (req, res, next) => {
+  try {
+    res.json(await translations.cancelTask(req.params.taskId));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/translations/tasks/:taskId/retry-failed', async (req, res, next) => {
+  try {
+    res.status(202).json(await translations.retryFailed(req.params.taskId));
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post('/api/analysis/summary', async (req, res, next) => {
   try {
     res.json(await ai.summarize(req.body.sourceId, req.body.text));
@@ -270,8 +399,11 @@ app.post('/api/export', async (req, res, next) => {
       res.status(404).json({ error: 'Book not found' });
       return;
     }
+    const language = String(req.body.language ?? 'original');
     const chapterRefs = await db.listChapters(bookUrl);
-    const chapters = (await Promise.all(chapterRefs.map((chapter) => db.getChapter(chapter.sourceUrl)))).filter((chapter): chapter is ChapterContent => Boolean(chapter));
+    const chapters = language === 'original'
+      ? (await Promise.all(chapterRefs.map((chapter) => db.getChapter(chapter.sourceUrl)))).filter((chapter): chapter is ChapterContent => Boolean(chapter))
+      : await getTranslatedChapters(chapterRefs, language);
     const baseName = safeFileName(stripKnownExtension(String(req.body.fileName || book.title || 'novel')) || 'novel');
     mkdirSync(exportDir, { recursive: true });
     if (format === 'zip') {
@@ -293,7 +425,7 @@ app.post('/api/export', async (req, res, next) => {
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   const message = error instanceof Error ? error.message : String(error);
   logger.error({ error }, message);
-  res.status(error instanceof ActiveTaskError ? 409 : 500).json({ error: message });
+  res.status(error instanceof ActiveTaskError || error instanceof ActiveTranslationTaskError ? 409 : 500).json({ error: message });
 });
 
 const server = createServer(app);
@@ -301,6 +433,16 @@ const wss = new WebSocketServer({ server, path: '/ws' });
 
 downloads.on('task', (task) => {
   const payload = JSON.stringify({ type: 'task', task });
+  for (const client of wss.clients) {
+    client.send(payload);
+  }
+  if (task.status === 'completed') {
+    translations.detectBookLanguage(task.bookUrl).catch((error) => logger.warn({ error, taskId: task.id }, 'Language detection failed'));
+  }
+});
+
+translations.on('task', (task) => {
+  const payload = JSON.stringify({ type: 'translation-task', task });
   for (const client of wss.clients) {
     client.send(payload);
   }
@@ -331,7 +473,7 @@ function normalizeSettings(input: unknown): AppSettings {
     throw new Error('PostgreSQL connection URL is required');
   }
   const autoRetryAttempts = normalizeRetryAttempts(body?.autoRetryAttempts, settings.autoRetryAttempts);
-  return { storage: { backend, sqlitePath, postgresUrl }, exportDir: body?.exportDir || settings.exportDir, autoRetryAttempts };
+  return { storage: { backend, sqlitePath, postgresUrl }, exportDir: body?.exportDir || settings.exportDir, autoRetryAttempts, translation: normalizeTranslationSettings(body?.translation ?? settings.translation) };
 }
 
 function normalizeRetryAttempts(value: unknown, fallback: number): number {
@@ -342,4 +484,29 @@ function normalizeRetryAttempts(value: unknown, fallback: number): number {
 function stripKnownExtension(fileName: string): string {
   const extension = extname(fileName).toLowerCase();
   return ['.txt', '.md', '.markdown', '.zip'].includes(extension) ? fileName.slice(0, -extension.length) : fileName;
+}
+
+async function getTranslatedChapters(chapterRefs: Array<{ sourceUrl: string; bookUrl: string; siteId: string; title: string; index: number }>, language: string): Promise<ChapterContent[]> {
+  const chapters: ChapterContent[] = [];
+  const missing: string[] = [];
+  for (const ref of chapterRefs) {
+    const translation = await db.getTranslation(ref.sourceUrl, language);
+    if (!translation) {
+      missing.push(ref.title);
+      continue;
+    }
+    chapters.push({
+      siteId: ref.siteId,
+      bookUrl: ref.bookUrl,
+      sourceUrl: ref.sourceUrl,
+      title: translation.title,
+      index: translation.chapterIndex,
+      text: translation.text,
+      fetchedAt: translation.updatedAt,
+    });
+  }
+  if (missing.length > 0) {
+    throw new Error(`Missing ${missing.length} translated chapters for ${language}`);
+  }
+  return chapters;
 }

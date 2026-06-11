@@ -32,6 +32,29 @@ export interface ChapterContent extends ChapterRef {
   fetchedAt: string;
 }
 
+export interface LanguageProfile {
+  bookUrl: string;
+  language: string;
+  confidence: number;
+  sampleSize: number;
+  detectedAt: string;
+  detector: string;
+}
+
+export interface ChapterTranslation {
+  sourceUrl: string;
+  bookUrl: string;
+  chapterIndex: number;
+  title: string;
+  sourceLanguage: string;
+  targetLanguage: string;
+  text: string;
+  model: string;
+  promptHash: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface SearchResult {
   siteId: string;
   title: string;
@@ -70,6 +93,12 @@ export interface ServiceSettings {
   };
   exportDir: string;
   autoRetryAttempts: number;
+  translation: {
+    defaultTargetLanguage: string;
+    defaultPrompt: string;
+    maxChunkChars: number;
+    autoRetryAttempts: number;
+  };
   activeStorageBackend?: StorageBackend;
 }
 
@@ -99,6 +128,33 @@ export interface DownloadFailure {
   chapterUrl: string;
   chapterIndex: number;
   title: string;
+  attempts: number;
+  error: string;
+  lastFailedAt: string;
+}
+
+export interface TranslationTask {
+  id: string;
+  bookUrl: string;
+  sourceLanguage: string;
+  targetLanguage: string;
+  status: string;
+  totalChapters: number;
+  completedChapters: number;
+  failedChapters: number;
+  force: boolean;
+  createdAt: string;
+  updatedAt: string;
+  message?: string;
+}
+
+export interface TranslationFailure {
+  taskId: string;
+  bookUrl: string;
+  chapterUrl: string;
+  chapterIndex: number;
+  title: string;
+  targetLanguage: string;
   attempts: number;
   error: string;
   lastFailedAt: string;

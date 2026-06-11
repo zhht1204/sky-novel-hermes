@@ -1,5 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { DEFAULT_TRANSLATION_PROMPT } from '@sky-novel-hermes/ai';
+import type { TranslationSettings } from '@sky-novel-hermes/shared';
 import type { HermesDatabaseOptions, StorageBackend } from '@sky-novel-hermes/storage';
 
 export interface ServiceConfig {
@@ -10,12 +12,14 @@ export interface ServiceConfig {
   settingsPath: string;
   storage: HermesDatabaseOptions;
   autoRetryAttempts: number;
+  translation: TranslationSettings;
 }
 
 export interface AppSettings {
   storage: HermesDatabaseOptions;
   exportDir: string;
   autoRetryAttempts: number;
+  translation: TranslationSettings;
 }
 
 export function loadConfig(): ServiceConfig {
@@ -30,6 +34,7 @@ export function loadConfig(): ServiceConfig {
     settingsPath,
     storage: settings.storage,
     autoRetryAttempts: settings.autoRetryAttempts,
+    translation: settings.translation,
   };
 }
 
@@ -42,11 +47,21 @@ export function loadSettings(settingsPath: string, dataDir = './storage'): AppSe
   return {
     exportDir: process.env.HERMES_EXPORT_DIR ?? saved.exportDir ?? './exports',
     autoRetryAttempts: numberFromEnvOrSaved(process.env.HERMES_AUTO_RETRY_ATTEMPTS, saved.autoRetryAttempts, 1),
+    translation: normalizeTranslationSettings(saved.translation),
     storage: {
       backend,
       sqlitePath: process.env.HERMES_SQLITE_PATH ?? saved.storage?.sqlitePath ?? join(dataDir, 'hermes.sqlite'),
       postgresUrl: envPostgresUrl ?? saved.storage?.postgresUrl ?? '',
     },
+  };
+}
+
+export function normalizeTranslationSettings(input: Partial<TranslationSettings> | undefined): TranslationSettings {
+  return {
+    defaultTargetLanguage: input?.defaultTargetLanguage || 'zh-Hans',
+    defaultPrompt: input?.defaultPrompt || DEFAULT_TRANSLATION_PROMPT,
+    maxChunkChars: positiveInteger(input?.maxChunkChars, 6000),
+    autoRetryAttempts: nonnegativeInteger(input?.autoRetryAttempts, 1),
   };
 }
 
@@ -68,4 +83,12 @@ function numberFromEnvOrSaved(envValue: string | undefined, savedValue: number |
   const parsed = envValue === undefined ? savedValue : Number(envValue);
   if (typeof parsed !== 'number') return fallback;
   return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function positiveInteger(value: number | undefined, fallback: number): number {
+  return typeof value === 'number' && Number.isInteger(value) && value > 0 ? value : fallback;
+}
+
+function nonnegativeInteger(value: number | undefined, fallback: number): number {
+  return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : fallback;
 }

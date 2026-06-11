@@ -1,6 +1,6 @@
 # Sky Novel Hermes
 
-Sky Novel Hermes is a Tauri desktop app for lawful novel download management, local library organization, AI-assisted analysis, preview, and export packaging.
+Sky Novel Hermes is a Tauri desktop app for lawful novel download management, local library organization, AI-assisted analysis, multilingual post-processing, preview, and export packaging.
 
 The GUI is built with Tauri, Vite, React, and TypeScript. Crawling, queueing, storage, exports, and AI analysis run in a Node.js v22 local service. The first hard-coded site adapter targets `https://big5.quanben5.io`.
 
@@ -21,7 +21,7 @@ pnpm dev
 
 The Node service stores cached metadata, catalogs, chapter content, and download tasks through a selectable storage backend. SQLite is the default and writes to `./storage/hermes.sqlite`. PostgreSQL can be enabled in the app Settings page, or by setting `HERMES_STORAGE_BACKEND=postgres` with `HERMES_DATABASE_URL` or `DATABASE_URL`. The service creates the required tables on startup.
 
-Downloaded novel content is stored as structured chapter records in the selected backend. Each chapter can keep plain text and HTML, which makes the database the canonical cache while TXT, Markdown, ZIP, and future EPUB/PDF files are generated as export artifacts. The Packaging page lets you choose the book, export format, output directory, and file name at export time; Settings controls the default export directory.
+Downloaded novel content is stored as structured chapter records in the selected backend. Each chapter can keep plain text and HTML, which makes the database the canonical cache while TXT, Markdown, ZIP, and future EPUB/PDF files are generated as export artifacts. The Multilingual Processing page can detect downloaded book language, start AI translation tasks for a target language, pause/resume/cancel those tasks, retry failed chapters, and retranslate unsatisfactory content. The Packaging page lets you choose the book, language, export format, output directory, and file name at export time; Settings controls the default export directory and translation prompt.
 
 `pnpm dev` runs the Node service and Tauri desktop app in parallel. You can also run them in two terminals when debugging one side at a time:
 
@@ -34,6 +34,18 @@ pnpm dev:desktop
 ```
 
 The Node service defaults to `http://127.0.0.1:17891`. The desktop app reads from `VITE_HERMES_SERVICE_URL` when set, otherwise it uses that local URL.
+
+## AI Translation
+
+AI features use a LiteLLM/OpenAI-compatible endpoint configured through environment variables:
+
+```powershell
+$env:LITELLM_BASE_URL = "http://127.0.0.1:4000"
+$env:LITELLM_MODEL = "gpt-4o-mini"
+$env:LITELLM_API_KEY = "optional-key"
+```
+
+Language detection runs after downloads complete and can also be triggered manually from the Multilingual Processing page. Translation does not fetch new source content; it only processes chapters already downloaded into the local library. The default translation prompt is editable from Settings and is stored in the local settings file alongside retry and chunk-size preferences.
 
 ## First Sample
 
