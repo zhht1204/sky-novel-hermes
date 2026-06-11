@@ -106,6 +106,9 @@ table { width: 100%; border-collapse: collapse; }
 th, td { padding: 10px; border-bottom: 1px solid #e1e7ed; text-align: left; font-size: 14px; }
 tbody tr { cursor: pointer; }
 tbody tr:hover { background: #f6f8fa; }
+.tableActions { display: flex; flex-wrap: wrap; gap: 8px; }
+.tableActions button { border: 0; border-radius: 6px; background: #e5ebf0; color: #1d252c; padding: 6px 9px; cursor: pointer; }
+.tableActions button:disabled { cursor: not-allowed; opacity: 0.5; }
 
 .badge { padding: 3px 8px; border-radius: 999px; background: #e5ebf0; font-size: 12px; }
 .badge.running { background: #d8eef6; color: #176b87; }
@@ -133,6 +136,9 @@ tbody tr:hover { background: #f6f8fa; }
 .catalogPreview { display: grid; gap: 10px; margin-top: 14px; }
 .catalogPreview div { max-height: 320px; }
 .catalogPreview p { margin: 0; font-size: 13px; }
+.failureList { margin-top: 16px; padding: 12px; border: 1px solid #e1e7ed; border-radius: 8px; background: #f8fafb; }
+.failureList header { display: flex; justify-content: space-between; margin-bottom: 10px; color: #26323d; }
+.failureList header span { color: #687785; font-size: 13px; }
 .settingsGrid, .exportGrid { display: grid; gap: 12px; margin-bottom: 14px; }
 .exportGrid { grid-template-columns: repeat(2, minmax(220px, 1fr)); }
 .settingsGrid label, .exportGrid label { display: grid; gap: 6px; }

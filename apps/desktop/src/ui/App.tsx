@@ -1,7 +1,7 @@
 import { Archive, BookOpen, Download, Eye, Home, Package, Search, Settings, Sparkles } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { apiGet, apiPost, serviceWsUrl } from '../api.js';
-import type { AggregatedSearchResponse, BookInfo, ChapterContent, ChapterRef, DownloadTask, ExportResponse, ServiceSettings, SiteSearchResultGroup, SiteSummary, UrlImportResponse } from '../types.js';
+import type { AggregatedSearchResponse, BookInfo, ChapterContent, ChapterRef, DownloadFailure, DownloadTask, ExportResponse, ServiceSettings, SiteSearchResultGroup, SiteSummary, UrlImportResponse } from '../types.js';
 
 const sampleUrl = 'https://big5.quanben5.io/n/moshi_wodunliaoyiwanwuzi/xiaoshuo.html';
 const nav = [
@@ -100,7 +100,7 @@ export function App() {
         </header>
         {active === 'home' && <HomeView sites={sites} tasks={tasks} books={books} onImport={importSample} />}
         {active === 'search' && <SearchView sites={sites} selectedBookUrl={selectedBookUrl} setSelectedBookUrl={setSelectedBookUrl} onImportUrl={importUrl} onDownload={startDownload} />}
-        {active === 'downloads' && <DownloadsView tasks={tasks} />}
+        {active === 'downloads' && <DownloadsView tasks={tasks} refresh={refresh} />}
         {active === 'library' && <LibraryView books={books} setSelectedBookUrl={setSelectedBookUrl} setActive={setActive} />}
         {active === 'package' && <PackageView books={books} selectedBookUrl={selectedBookUrl} setSelectedBookUrl={setSelectedBookUrl} />}
         {active === 'preview' && <PreviewView book={selectedBook} chapters={chapters} />}
@@ -162,8 +162,31 @@ function CatalogPreview({ chapters }: { chapters: ChapterRef[] }) {
   return <div className="catalogPreview"><header><strong>目录预览</strong><span>{chapters.length} 章</span></header><div>{chapters.slice(0, 80).map((chapter) => <button key={chapter.sourceUrl}>{chapter.index}. {chapter.title}</button>)}</div>{chapters.length > 80 && <p>已显示前 80 章，其余章节已写入本地目录。</p>}</div>;
 }
 
-function DownloadsView({ tasks }: { tasks: DownloadTask[] }) {
-  return <section className="panel"><h2>下载队列</h2><table><thead><tr><th>状态</th><th>进度</th><th>失败</th><th>消息</th></tr></thead><tbody>{tasks.map((task) => <tr key={task.id}><td><span className={`badge ${task.status}`}>{task.status}</span></td><td>{task.completedChapters}/{task.totalChapters}</td><td>{task.failedChapters}</td><td>{task.message}</td></tr>)}</tbody></table></section>;
+function DownloadsView({ tasks, refresh }: { tasks: DownloadTask[]; refresh: () => Promise<void> }) {
+  const [openTaskId, setOpenTaskId] = useState('');
+  const [failures, setFailures] = useState<Record<string, DownloadFailure[]>>({});
+
+  async function toggleFailures(task: DownloadTask) {
+    const nextOpenTaskId = openTaskId === task.id ? '' : task.id;
+    setOpenTaskId(nextOpenTaskId);
+    if (nextOpenTaskId && !failures[task.id]) {
+      const data = await apiGet<DownloadFailure[]>(`/api/downloads/${task.id}/failures`);
+      setFailures((current) => ({ ...current, [task.id]: data }));
+    }
+  }
+
+  async function retryFailed(task: DownloadTask) {
+    await apiPost(`/api/downloads/${task.id}/retry-failed`, {});
+    setFailures((current) => ({ ...current, [task.id]: [] }));
+    await refresh();
+  }
+
+  return <section className="panel"><h2>下载队列</h2><table><thead><tr><th>状态</th><th>进度</th><th>失败</th><th>消息</th><th>操作</th></tr></thead><tbody>{tasks.map((task) => <tr key={task.id}><td><span className={`badge ${task.status}`}>{task.status}</span></td><td>{task.completedChapters}/{task.totalChapters}</td><td>{task.failedChapters}</td><td>{task.message}</td><td><div className="tableActions"><button onClick={() => toggleFailures(task)} disabled={task.failedChapters === 0}>失败明细</button><button onClick={() => retryFailed(task)} disabled={task.failedChapters === 0 || task.status === 'running'}>重试失败</button></div></td></tr>)}</tbody></table>{openTaskId && <FailureList failures={failures[openTaskId] ?? []} />}</section>;
+}
+
+function FailureList({ failures }: { failures: DownloadFailure[] }) {
+  if (failures.length === 0) return <div className="failureList"><p>没有失败章节记录。</p></div>;
+  return <div className="failureList"><header><strong>失败章节</strong><span>{failures.length} 条</span></header><table><thead><tr><th>序号</th><th>章节</th><th>尝试</th><th>错误</th></tr></thead><tbody>{failures.map((failure) => <tr key={failure.chapterUrl}><td>{failure.chapterIndex}</td><td>{failure.title}</td><td>{failure.attempts}</td><td>{failure.error}</td></tr>)}</tbody></table></div>;
 }
 
 function LibraryView({ books, setSelectedBookUrl, setActive }: { books: BookInfo[]; setSelectedBookUrl: (value: string) => void; setActive: (value: string) => void }) {
@@ -224,5 +247,5 @@ function SettingsView() {
 
   if (!settings) return <section className="panel"><h2>服务设置</h2><p>{message || '正在读取设置...'}</p></section>;
 
-  return <section className="panel"><h2>服务设置</h2><div className="settingsGrid"><label><span>存储后端</span><select value={settings.storage.backend} onChange={(event) => setSettings({ ...settings, storage: { ...settings.storage, backend: event.target.value === 'postgres' ? 'postgres' : 'sqlite' } })}><option value="sqlite">SQLite 本地文件</option><option value="postgres">PostgreSQL 数据库</option></select></label><label><span>SQLite 文件</span><input value={settings.storage.sqlitePath ?? ''} onChange={(event) => setSettings({ ...settings, storage: { ...settings.storage, sqlitePath: event.target.value } })} /></label><label><span>PostgreSQL URL</span><input value={settings.storage.postgresUrl ?? ''} onChange={(event) => setSettings({ ...settings, storage: { ...settings.storage, postgresUrl: event.target.value } })} placeholder="postgres://user:password@host:5432/database" /></label><label><span>默认导出目录</span><input value={settings.exportDir} onChange={(event) => setSettings({ ...settings, exportDir: event.target.value })} placeholder="./exports" /></label></div><div className="formRow"><button className="primary" onClick={save}>保存设置</button><span>当前：{settings.activeStorageBackend === 'postgres' ? 'PostgreSQL' : 'SQLite'}</span></div><p>{message || '元数据、目录缓存、章节缓存和下载任务会写入所选后端。'}</p><p>AI 接入通过外部 LiteLLM/OpenAI-compatible API 环境变量配置。</p></section>;
+  return <section className="panel"><h2>服务设置</h2><div className="settingsGrid"><label><span>存储后端</span><select value={settings.storage.backend} onChange={(event) => setSettings({ ...settings, storage: { ...settings.storage, backend: event.target.value === 'postgres' ? 'postgres' : 'sqlite' } })}><option value="sqlite">SQLite 本地文件</option><option value="postgres">PostgreSQL 数据库</option></select></label><label><span>SQLite 文件</span><input value={settings.storage.sqlitePath ?? ''} onChange={(event) => setSettings({ ...settings, storage: { ...settings.storage, sqlitePath: event.target.value } })} /></label><label><span>PostgreSQL URL</span><input value={settings.storage.postgresUrl ?? ''} onChange={(event) => setSettings({ ...settings, storage: { ...settings.storage, postgresUrl: event.target.value } })} placeholder="postgres://user:password@host:5432/database" /></label><label><span>默认导出目录</span><input value={settings.exportDir} onChange={(event) => setSettings({ ...settings, exportDir: event.target.value })} placeholder="./exports" /></label><label><span>自动重试次数</span><input type="number" min="0" step="1" value={settings.autoRetryAttempts} onChange={(event) => setSettings({ ...settings, autoRetryAttempts: Math.max(0, Number.parseInt(event.target.value || '0', 10)) })} /></label></div><div className="formRow"><button className="primary" onClick={save}>保存设置</button><span>当前：{settings.activeStorageBackend === 'postgres' ? 'PostgreSQL' : 'SQLite'}</span></div><p>{message || '元数据、目录缓存、章节缓存和下载任务会写入所选后端。'}</p><p>下载章节默认失败后自动重试 1 次；超过设置次数后会进入失败明细，需手动重试。</p><p>AI 接入通过外部 LiteLLM/OpenAI-compatible API 环境变量配置。</p></section>;
 }

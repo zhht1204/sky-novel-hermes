@@ -122,6 +122,20 @@ export const DownloadTaskSchema = z.object({
 
 export type DownloadTask = z.infer<typeof DownloadTaskSchema>;
 
+export const DownloadFailureSchema = z.object({
+  taskId: z.string(),
+  siteId: z.string(),
+  bookUrl: z.string().url(),
+  chapterUrl: z.string().url(),
+  chapterIndex: z.number().int().nonnegative(),
+  title: z.string(),
+  attempts: z.number().int().nonnegative(),
+  error: z.string(),
+  lastFailedAt: z.string(),
+});
+
+export type DownloadFailure = z.infer<typeof DownloadFailureSchema>;
+
 export const AnalysisKindSchema = z.enum(['metadata', 'chapter-summary', 'book-summary', 'quality-check']);
 export type AnalysisKind = z.infer<typeof AnalysisKindSchema>;
 

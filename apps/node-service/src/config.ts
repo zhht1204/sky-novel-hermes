@@ -9,11 +9,13 @@ export interface ServiceConfig {
   exportDir: string;
   settingsPath: string;
   storage: HermesDatabaseOptions;
+  autoRetryAttempts: number;
 }
 
 export interface AppSettings {
   storage: HermesDatabaseOptions;
   exportDir: string;
+  autoRetryAttempts: number;
 }
 
 export function loadConfig(): ServiceConfig {
@@ -27,6 +29,7 @@ export function loadConfig(): ServiceConfig {
     exportDir: settings.exportDir,
     settingsPath,
     storage: settings.storage,
+    autoRetryAttempts: settings.autoRetryAttempts,
   };
 }
 
@@ -38,6 +41,7 @@ export function loadSettings(settingsPath: string, dataDir = './storage'): AppSe
 
   return {
     exportDir: process.env.HERMES_EXPORT_DIR ?? saved.exportDir ?? './exports',
+    autoRetryAttempts: numberFromEnvOrSaved(process.env.HERMES_AUTO_RETRY_ATTEMPTS, saved.autoRetryAttempts, 1),
     storage: {
       backend,
       sqlitePath: process.env.HERMES_SQLITE_PATH ?? saved.storage?.sqlitePath ?? join(dataDir, 'hermes.sqlite'),
@@ -58,4 +62,10 @@ function readSettingsFile(settingsPath: string): Partial<AppSettings> {
 
 function parseBackend(value: string | undefined): StorageBackend | undefined {
   return value === 'sqlite' || value === 'postgres' ? value : undefined;
+}
+
+function numberFromEnvOrSaved(envValue: string | undefined, savedValue: number | undefined, fallback: number): number {
+  const parsed = envValue === undefined ? savedValue : Number(envValue);
+  if (typeof parsed !== 'number') return fallback;
+  return Number.isInteger(parsed) && parsed >= 0 ? parsed : fallback;
 }

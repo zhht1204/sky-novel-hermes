@@ -69,6 +69,7 @@ export interface ServiceSettings {
     postgresUrl?: string;
   };
   exportDir: string;
+  autoRetryAttempts: number;
   activeStorageBackend?: StorageBackend;
 }
 
@@ -89,4 +90,16 @@ export interface DownloadTask {
   createdAt: string;
   updatedAt: string;
   message?: string;
+}
+
+export interface DownloadFailure {
+  taskId: string;
+  siteId: string;
+  bookUrl: string;
+  chapterUrl: string;
+  chapterIndex: number;
+  title: string;
+  attempts: number;
+  error: string;
+  lastFailedAt: string;
 }

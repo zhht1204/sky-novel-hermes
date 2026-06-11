@@ -18,10 +18,10 @@ import { DownloadManager } from './downloadManager.js';
 const startedAt = new Date().toISOString();
 const config = loadConfig();
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
-let settings: AppSettings = { storage: config.storage, exportDir: config.exportDir };
+let settings: AppSettings = { storage: config.storage, exportDir: config.exportDir, autoRetryAttempts: config.autoRetryAttempts };
 let db = await HermesDatabase.connect(settings.storage);
 const ai = createLiteLlmClientFromEnv();
-const downloads = new DownloadManager(db, getSite);
+const downloads = new DownloadManager(db, getSite, settings.autoRetryAttempts);
 
 mkdirSync(config.exportDir, { recursive: true });
 
@@ -52,6 +52,7 @@ app.post('/api/settings', async (req, res, next) => {
     settings = nextSettings;
     db = nextDb;
     downloads.setDatabase(nextDb);
+    downloads.setAutoRetryAttempts(nextSettings.autoRetryAttempts);
     saveSettings(config.settingsPath, nextSettings);
     await previousDb.close();
     res.json({ ...settings, activeStorageBackend: db.backend });
@@ -190,6 +191,22 @@ app.get('/api/downloads', async (_req, res, next) => {
   }
 });
 
+app.get('/api/downloads/:taskId/failures', async (req, res, next) => {
+  try {
+    res.json(await db.listFailures(req.params.taskId));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/downloads/:taskId/retry-failed', async (req, res, next) => {
+  try {
+    res.status(202).json(await downloads.retryFailed(req.params.taskId));
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get('/api/library/books', async (_req, res, next) => {
   try {
     res.json(await db.listBooks());
@@ -297,7 +314,13 @@ function normalizeSettings(input: unknown): AppSettings {
   if (backend === 'postgres' && !postgresUrl) {
     throw new Error('PostgreSQL connection URL is required');
   }
-  return { storage: { backend, sqlitePath, postgresUrl }, exportDir: body?.exportDir || settings.exportDir };
+  const autoRetryAttempts = normalizeRetryAttempts(body?.autoRetryAttempts, settings.autoRetryAttempts);
+  return { storage: { backend, sqlitePath, postgresUrl }, exportDir: body?.exportDir || settings.exportDir, autoRetryAttempts };
+}
+
+function normalizeRetryAttempts(value: unknown, fallback: number): number {
+  if (typeof value !== 'number') return fallback;
+  return Number.isInteger(value) && value >= 0 ? value : fallback;
 }
 
 function stripKnownExtension(fileName: string): string {
