@@ -227,24 +227,6 @@ app.get('/api/library/books', async (_req, res, next) => {
   }
 });
 
-app.delete('/api/library/books', async (req, res, next) => {
-  try {
-    const bookUrl = String(req.query.bookUrl ?? '').trim();
-    if (!bookUrl) {
-      res.status(400).json({ error: 'bookUrl is required' });
-      return;
-    }
-    const deleted = await db.deleteBook(bookUrl);
-    if (!deleted) {
-      res.status(404).json({ error: 'Book not found' });
-      return;
-    }
-    res.json({ deleted: true, bookUrl });
-  } catch (error) {
-    next(error);
-  }
-});
-
 app.get('/api/library/chapters', async (req, res, next) => {
   try {
     res.json(await db.listChapters(String(req.query.bookUrl ?? '')));
@@ -445,10 +427,7 @@ app.post('/api/export', async (req, res, next) => {
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   const message = error instanceof Error ? error.message : String(error);
   logger.error({ error }, message);
-  const status = error instanceof HttpStatusError
-    ? error.statusCode
-    : error instanceof ActiveTaskError || error instanceof ActiveTranslationTaskError ? 409 : 500;
-  res.status(status).json({ error: message });
+  res.status(error instanceof ActiveTaskError || error instanceof ActiveTranslationTaskError ? 409 : 500).json({ error: message });
 });
 
 const server = createServer(app);
@@ -476,31 +455,15 @@ server.listen(config.port, config.host, () => {
 });
 
 function getSiteForUrl(url: string) {
-  if (!url) {
-    throw new HttpStatusError(400, '请输入 URL');
-  }
-
-  let target: URL;
-  try {
-    target = new URL(url);
-  } catch {
-    throw new HttpStatusError(400, 'URL 格式不正确');
-  }
-
+  const target = new URL(url);
   const site = getSites().find((candidate) => {
     const base = new URL(candidate.baseUrl);
-    return target.hostname === base.hostname;
+    return target.protocol === base.protocol && target.hostname === base.hostname;
   });
   if (!site) {
-    throw new HttpStatusError(400, `不支持此站点：${target.hostname}`);
+    throw new Error(`No registered site supports URL: ${url}`);
   }
   return site;
-}
-
-class HttpStatusError extends Error {
-  constructor(public readonly statusCode: number, message: string) {
-    super(message);
-  }
 }
 
 function normalizeSettings(input: unknown): AppSettings {

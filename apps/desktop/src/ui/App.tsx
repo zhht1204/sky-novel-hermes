@@ -1,6 +1,6 @@
-import { Archive, BookOpen, BrainCircuit, Download, Eye, Home, Languages, Package, Pause, Play, RotateCcw, Search, Settings, Trash2, X } from 'lucide-react';
+import { Archive, BookOpen, BrainCircuit, Download, Eye, Home, Languages, Package, Pause, Play, RotateCcw, Search, Settings, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { apiDelete, apiGet, apiPost, serviceUrl, serviceWsUrl } from '../api.js';
+import { apiGet, apiPost, serviceUrl, serviceWsUrl } from '../api.js';
 import type { AggregatedSearchResponse, AiUsageRecord, AiUsageSummary, BookInfo, ChapterContent, ChapterRef, ChapterTranslation, DownloadFailure, DownloadTask, ExportResponse, LanguageProfile, ServiceSettings, SiteSearchResultGroup, SiteSummary, TranslationFailure, TranslationTask, UrlImportResponse } from '../types.js';
 
 const nav = [
@@ -75,17 +75,12 @@ export function App() {
 
   async function importUrl(url: string): Promise<UrlImportResponse> {
     setMessage('正在解析 URL 并导入目录');
-    try {
-      const result = await apiPost<UrlImportResponse>('/api/import-url', { url });
-      setSelectedBookUrl(result.book.canonicalUrl);
-      setChapters(result.catalog);
-      setMessage(`已导入《${result.book.title}》目录 ${result.catalogCount} 章`);
-      await refresh();
-      return result;
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
-      throw error;
-    }
+    const result = await apiPost<UrlImportResponse>('/api/import-url', { url });
+    setSelectedBookUrl(result.book.canonicalUrl);
+    setChapters(result.catalog);
+    setMessage(`已导入《${result.book.title}》目录 ${result.catalogCount} 章`);
+    await refresh();
+    return result;
   }
 
   async function startDownload() {
@@ -127,7 +122,7 @@ export function App() {
         {active === 'search' && <SearchView sites={sites} selectedBookUrl={selectedBookUrl} setSelectedBookUrl={setSelectedBookUrl} onImportUrl={importUrl} onDownload={startDownload} />}
         {active === 'downloads' && <DownloadsView tasks={tasks} refresh={refresh} />}
         {active === 'translations' && <TranslationsView books={books} selectedBookUrl={selectedBookUrl} setSelectedBookUrl={setSelectedBookUrl} tasks={translationTasks} refresh={refresh} />}
-        {active === 'library' && <LibraryView books={books} selectedBookUrl={selectedBookUrl} setSelectedBookUrl={setSelectedBookUrl} setActive={setActive} refresh={refresh} setMessage={setMessage} />}
+        {active === 'library' && <LibraryView books={books} setSelectedBookUrl={setSelectedBookUrl} setActive={setActive} />}
         {active === 'package' && <PackageView books={books} selectedBookUrl={selectedBookUrl} setSelectedBookUrl={setSelectedBookUrl} />}
         {active === 'preview' && <PreviewView book={selectedBook} chapters={chapters} />}
         {active === 'ai' && <AiUsageView />}
@@ -168,14 +163,9 @@ function SearchView({ sites, selectedBookUrl, setSelectedBookUrl, onImportUrl, o
   }
 
   async function parseUrl() {
-    try {
-      const result = await onImportUrl(selectedBookUrl);
-      setImportedBook(result.book);
-      setCatalogPreview(result.catalog);
-    } catch {
-      setImportedBook(undefined);
-      setCatalogPreview([]);
-    }
+    const result = await onImportUrl(selectedBookUrl);
+    setImportedBook(result.book);
+    setCatalogPreview(result.catalog);
   }
 
   return <div className="stack"><section className="panel"><h2>聚合搜索</h2><div className="sitePicker">{searchableSites.map((site) => <label key={site.id}><input type="checkbox" checked={selectedSiteIds.includes(site.id)} onChange={() => toggleSite(site.id)} />{site.displayName}</label>)}</div><div className="formRow"><input placeholder="书名或作者" value={keyword} onChange={(event) => setKeyword(event.target.value)} /><button onClick={search} disabled={selectedSiteIds.length === 0 || !keyword.trim()}>同步搜索</button></div><div className="searchGroups">{searchGroups.map((group) => <section className="sourceGroup" key={group.siteId}><header><strong>{group.displayName}</strong><span>{group.error ? group.error : `${group.results.length} 条结果`}</span></header><div className="resultList">{group.results.map((result) => <button key={`${result.siteId}:${result.url}`} onClick={() => setSelectedBookUrl(result.url)}><strong>{result.title}</strong><span>{result.author ?? result.url}</span></button>)}</div></section>)}</div></section><section className="panel"><h2>URL 导入</h2><div className="formRow"><input value={selectedBookUrl} onChange={(event) => setSelectedBookUrl(event.target.value)} placeholder="https://source.example/path/book.html" /><button onClick={parseUrl} disabled={!selectedBookUrl.trim()}>解析目录</button><button className="primary" onClick={onDownload} disabled={!selectedBookUrl.trim()}>开始下载</button></div>{importedBook && <div className="bookSummary">{importedBook.coverUrl && <img src={importedBook.coverUrl} alt="" />}<div><strong>{importedBook.title}</strong><span>{[importedBook.author, importedBook.category, importedBook.status].filter(Boolean).join(' · ')}</span><p>{importedBook.description}</p></div></div>}<CatalogPreview chapters={catalogPreview} /></section></div>;
@@ -186,7 +176,7 @@ function matchSiteByUrl(sites: SiteSummary[], url: string): SiteSummary | undefi
     const target = new URL(url);
     return sites.find((site) => {
       const base = new URL(site.baseUrl);
-      return target.hostname === base.hostname;
+      return target.protocol === base.protocol && target.hostname === base.hostname;
     });
   } catch {
     return undefined;
@@ -330,24 +320,8 @@ function TranslationFailureList({ failures }: { failures: TranslationFailure[] }
   return <div className="failureList"><header><strong>翻译失败章节</strong><span>{failures.length} 条</span></header><table><thead><tr><th>序号</th><th>章节</th><th>目标语言</th><th>尝试</th><th>错误</th></tr></thead><tbody>{failures.map((failure) => <tr key={failure.chapterUrl}><td>{failure.chapterIndex}</td><td>{failure.title}</td><td>{failure.targetLanguage}</td><td>{failure.attempts}</td><td>{failure.error}</td></tr>)}</tbody></table></div>;
 }
 
-function LibraryView({ books, selectedBookUrl, setSelectedBookUrl, setActive, refresh, setMessage }: { books: BookInfo[]; selectedBookUrl: string; setSelectedBookUrl: (value: string) => void; setActive: (value: string) => void; refresh: () => Promise<void>; setMessage: (value: string) => void }) {
-  async function deleteBook(book: BookInfo, event: React.MouseEvent<HTMLButtonElement>) {
-    event.stopPropagation();
-    const confirmed = window.confirm(`删除《${book.title}》及其本地章节、译文和语言检测记录？`);
-    if (!confirmed) return;
-    try {
-      await apiDelete(`/api/library/books?bookUrl=${encodeURIComponent(book.canonicalUrl)}`);
-      if (selectedBookUrl === book.canonicalUrl || selectedBookUrl === book.sourceUrl) {
-        setSelectedBookUrl('');
-      }
-      setMessage(`已删除《${book.title}》`);
-      await refresh();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : String(error));
-    }
-  }
-
-  return <section className="panel"><h2>本地书库</h2><table><thead><tr><th>书名</th><th>作者</th><th>分类</th><th>状态</th><th>操作</th></tr></thead><tbody>{books.map((book) => <tr key={book.canonicalUrl} onClick={() => { setSelectedBookUrl(book.canonicalUrl); setActive('preview'); }}><td>{book.title}</td><td>{book.author}</td><td>{book.category}</td><td>{book.status}</td><td><div className="tableActions"><button className="danger" onClick={(event) => deleteBook(book, event)} title="删除本地书籍"><Trash2 size={14} />删除</button></div></td></tr>)}</tbody></table>{books.length === 0 && <p>还没有已下载或已导入的书籍。</p>}</section>;
+function LibraryView({ books, setSelectedBookUrl, setActive }: { books: BookInfo[]; setSelectedBookUrl: (value: string) => void; setActive: (value: string) => void }) {
+  return <section className="panel"><h2>本地书库</h2><table><thead><tr><th>书名</th><th>作者</th><th>分类</th><th>状态</th></tr></thead><tbody>{books.map((book) => <tr key={book.canonicalUrl} onClick={() => { setSelectedBookUrl(book.canonicalUrl); setActive('preview'); }}><td>{book.title}</td><td>{book.author}</td><td>{book.category}</td><td>{book.status}</td></tr>)}</tbody></table></section>;
 }
 
 function PackageView({ books, selectedBookUrl, setSelectedBookUrl }: { books: BookInfo[]; selectedBookUrl: string; setSelectedBookUrl: (value: string) => void }) {
