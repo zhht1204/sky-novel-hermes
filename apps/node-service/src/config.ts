@@ -1,8 +1,10 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { dirname, join, parse } from 'node:path';
 import { DEFAULT_TRANSLATION_PROMPT } from '@sky-novel-hermes/ai';
 import type { TranslationSettings } from '@sky-novel-hermes/shared';
 import type { HermesDatabaseOptions, StorageBackend } from '@sky-novel-hermes/storage';
+
+loadDotEnvFromWorkspace();
 
 export interface ServiceConfig {
   host: string;
@@ -91,4 +93,47 @@ function positiveInteger(value: number | undefined, fallback: number): number {
 
 function nonnegativeInteger(value: number | undefined, fallback: number): number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : fallback;
+}
+
+function loadDotEnvFromWorkspace(): void {
+  const envPath = findUp('.env', process.cwd());
+  if (!envPath) return;
+  const lines = readFileSync(envPath, 'utf8').split(/\r?\n/);
+  for (const line of lines) {
+    const parsed = parseEnvLine(line);
+    if (!parsed || process.env[parsed.key] !== undefined) continue;
+    process.env[parsed.key] = parsed.value;
+  }
+}
+
+function findUp(fileName: string, startDir: string): string | undefined {
+  let current = startDir;
+  while (true) {
+    const candidate = join(current, fileName);
+    if (existsSync(candidate)) return candidate;
+    const parent = dirname(current);
+    if (parent === current || parse(current).root === current) return undefined;
+    current = parent;
+  }
+}
+
+function parseEnvLine(line: string): { key: string; value: string } | undefined {
+  const trimmed = line.trim();
+  if (!trimmed || trimmed.startsWith('#')) return undefined;
+  const normalized = trimmed.startsWith('export ') ? trimmed.slice(7).trim() : trimmed;
+  const separatorIndex = normalized.indexOf('=');
+  if (separatorIndex <= 0) return undefined;
+  const key = normalized.slice(0, separatorIndex).trim();
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(key)) return undefined;
+  return { key, value: unquoteEnvValue(normalized.slice(separatorIndex + 1).trim()) };
+}
+
+function unquoteEnvValue(value: string): string {
+  const quote = value[0];
+  if ((quote === '"' || quote === "'") && value.endsWith(quote)) {
+    const inner = value.slice(1, -1);
+    return quote === '"' ? inner.replace(/\\n/g, '\n').replace(/\\r/g, '\r').replace(/\\t/g, '\t') : inner;
+  }
+  const commentIndex = value.search(/\s#/);
+  return commentIndex >= 0 ? value.slice(0, commentIndex).trimEnd() : value;
 }

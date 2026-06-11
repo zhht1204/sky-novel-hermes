@@ -37,13 +37,21 @@ The Node service defaults to `http://127.0.0.1:17891`. The desktop app reads fro
 
 ## AI Translation
 
-AI features use a LiteLLM/OpenAI-compatible endpoint configured through environment variables:
+AI features use a LiteLLM/OpenAI-compatible endpoint configured through environment variables. The Node service loads a `.env` file from the workspace root on startup, so you can put the same keys in `./.env` and restart the service:
 
 ```powershell
 $env:LITELLM_BASE_URL = "http://127.0.0.1:4000"
 $env:LITELLM_MODEL = "gpt-4o-mini"
 $env:LITELLM_API_KEY = "optional-key"
 ```
+
+```dotenv
+LITELLM_BASE_URL=http://127.0.0.1:4000/v1
+LITELLM_MODEL=gpt-4o-mini
+LITELLM_API_KEY=optional-key
+```
+
+Values already present in the shell environment take precedence over `.env`. Frontend-only values must still use Vite's `VITE_` prefix, for example `VITE_HERMES_SERVICE_URL`.
 
 Language detection runs after downloads complete and can also be triggered manually from the Multilingual Processing page. Translation does not fetch new source content; it only processes chapters already downloaded into the local library. The default translation prompt is editable from Settings and is stored in the local settings file alongside retry and chunk-size preferences.
 
