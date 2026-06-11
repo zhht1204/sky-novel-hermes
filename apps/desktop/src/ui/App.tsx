@@ -120,7 +120,7 @@ export function App() {
         </header>
         {active === 'home' && <HomeView sites={sites} tasks={tasks} books={books} onOpenImport={() => setActive('search')} />}
         {active === 'search' && <SearchView sites={sites} selectedBookUrl={selectedBookUrl} setSelectedBookUrl={setSelectedBookUrl} onImportUrl={importUrl} onDownload={startDownload} />}
-        {active === 'downloads' && <DownloadsView tasks={tasks} refresh={refresh} />}
+        {active === 'downloads' && <DownloadsView tasks={tasks} books={books} setSelectedBookUrl={setSelectedBookUrl} setActive={setActive} refresh={refresh} />}
         {active === 'translations' && <TranslationsView books={books} selectedBookUrl={selectedBookUrl} setSelectedBookUrl={setSelectedBookUrl} tasks={translationTasks} refresh={refresh} />}
         {active === 'library' && <LibraryView books={books} selectedBookUrl={selectedBookUrl} setSelectedBookUrl={setSelectedBookUrl} setActive={setActive} refresh={refresh} setMessage={setMessage} />}
         {active === 'package' && <PackageView books={books} selectedBookUrl={selectedBookUrl} setSelectedBookUrl={setSelectedBookUrl} />}
@@ -215,9 +215,20 @@ function CatalogPreview({ chapters }: { chapters: ChapterRef[] }) {
   return <div className="catalogPreview"><header><strong>目录预览</strong><span>{chapters.length} 章</span></header><div>{chapters.slice(0, 80).map((chapter) => <button key={chapter.sourceUrl}>{chapter.index}. {chapter.title}</button>)}</div>{chapters.length > 80 && <p>已显示前 80 章，其余章节已写入本地目录。</p>}</div>;
 }
 
-function DownloadsView({ tasks, refresh }: { tasks: DownloadTask[]; refresh: () => Promise<void> }) {
+function DownloadsView({ tasks, books, setSelectedBookUrl, setActive, refresh }: { tasks: DownloadTask[]; books: BookInfo[]; setSelectedBookUrl: (value: string) => void; setActive: (value: string) => void; refresh: () => Promise<void> }) {
   const [openTaskId, setOpenTaskId] = useState('');
   const [failures, setFailures] = useState<Record<string, DownloadFailure[]>>({});
+
+  function bookForTask(task: DownloadTask): BookInfo | undefined {
+    return books.find((book) => book.canonicalUrl === task.bookUrl || book.sourceUrl === task.bookUrl || normalizeLocalUrl(book.canonicalUrl) === normalizeLocalUrl(task.bookUrl) || normalizeLocalUrl(book.sourceUrl) === normalizeLocalUrl(task.bookUrl));
+  }
+
+  function openDownloadedBook(task: DownloadTask) {
+    const book = bookForTask(task);
+    if (!book) return;
+    setSelectedBookUrl(book.canonicalUrl);
+    setActive('preview');
+  }
 
   async function toggleFailures(task: DownloadTask) {
     const nextOpenTaskId = openTaskId === task.id ? '' : task.id;
@@ -249,7 +260,34 @@ function DownloadsView({ tasks, refresh }: { tasks: DownloadTask[]; refresh: () 
     await refresh();
   }
 
-  return <section className="panel"><h2>下载队列</h2><table><thead><tr><th>状态</th><th>进度</th><th>失败</th><th>消息</th><th>操作</th></tr></thead><tbody>{tasks.map((task) => <tr key={task.id}><td><span className={`badge ${task.status}`}>{task.status}</span></td><td>{task.completedChapters}/{task.totalChapters}</td><td>{task.failedChapters}</td><td>{task.message}</td><td><div className="tableActions"><button onClick={() => pauseTask(task)} disabled={!['queued', 'running'].includes(task.status)} title="暂停任务"><Pause size={14} />暂停</button><button onClick={() => resumeTask(task)} disabled={['running', 'completed', 'cancelled'].includes(task.status)} title="继续缺失章节"><Play size={14} />继续</button><button onClick={() => cancelTask(task)} disabled={['completed', 'failed', 'cancelled'].includes(task.status)} title="取消任务"><X size={14} />取消</button><button onClick={() => toggleFailures(task)} disabled={task.failedChapters === 0}>失败明细</button><button onClick={() => retryFailed(task)} disabled={task.failedChapters === 0 || ['running', 'cancelled'].includes(task.status)}>重试失败</button></div></td></tr>)}</tbody></table>{openTaskId && <FailureList failures={failures[openTaskId] ?? []} />}</section>;
+  return <section className="panel"><h2>下载队列</h2><table><thead><tr><th>书籍</th><th>状态</th><th>进度</th><th>失败</th><th>消息</th><th>操作</th></tr></thead><tbody>{tasks.map((task) => {
+    const book = bookForTask(task);
+    const canPause = ['queued', 'running'].includes(task.status);
+    const canResume = !['running', 'completed', 'cancelled'].includes(task.status);
+    const canRetry = task.failedChapters > 0 && !['running', 'cancelled'].includes(task.status);
+    const canCancel = !['completed', 'failed', 'cancelled'].includes(task.status);
+    return <tr key={task.id}><td><div className="bookCell"><strong>{book?.title ?? shortUrl(task.bookUrl)}</strong><span>{book ? [book.author, book.category].filter(Boolean).join(' · ') : task.bookUrl}</span></div></td><td><span className={`badge ${task.status}`}>{task.status}</span></td><td>{task.completedChapters}/{task.totalChapters}</td><td>{task.failedChapters}</td><td>{task.message}</td><td><div className="tableActions"><button onClick={() => openDownloadedBook(task)} disabled={!book} title="打开已下载书籍"><BookOpen size={14} />打开</button>{canPause ? <button onClick={() => pauseTask(task)} title="暂停任务"><Pause size={14} />暂停</button> : <button onClick={() => resumeTask(task)} disabled={!canResume} title="继续缺失章节"><Play size={14} />继续</button>}{canRetry ? <button onClick={() => retryFailed(task)}>重试失败</button> : <button onClick={() => cancelTask(task)} disabled={!canCancel} title="取消任务"><X size={14} />取消</button>}<button onClick={() => toggleFailures(task)} disabled={task.failedChapters === 0}>失败明细</button></div></td></tr>;
+  })}</tbody></table>{openTaskId && <FailureList failures={failures[openTaskId] ?? []} />}</section>;
+}
+
+function normalizeLocalUrl(value: string): string {
+  try {
+    const url = new URL(value);
+    if (url.hash.startsWith('#hermes-copy-')) url.hash = '';
+    return url.toString();
+  } catch {
+    return value;
+  }
+}
+
+function shortUrl(value: string): string {
+  try {
+    const url = new URL(value);
+    const lastSegment = url.pathname.split('/').filter(Boolean).at(-1);
+    return lastSegment ? `${url.hostname}/${lastSegment}` : url.hostname;
+  } catch {
+    return value;
+  }
 }
 
 function FailureList({ failures }: { failures: DownloadFailure[] }) {
