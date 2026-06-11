@@ -1,6 +1,7 @@
-import { Archive, BookOpen, BrainCircuit, Download, Eye, Home, Languages, Package, Pause, Play, RotateCcw, Search, Settings, X } from 'lucide-react';
+import { Archive, BookOpen, BrainCircuit, Download, Eye, Home, Languages, Package, Pause, Play, RotateCcw, Search, Settings, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { apiGet, apiPost, serviceUrl, serviceWsUrl } from '../api.js';
+import type { MouseEvent } from 'react';
+import { apiDelete, apiGet, apiPost, serviceUrl, serviceWsUrl } from '../api.js';
 import type { AggregatedSearchResponse, AiUsageRecord, AiUsageSummary, BookInfo, ChapterContent, ChapterRef, ChapterTranslation, DownloadFailure, DownloadTask, ExportResponse, LanguageProfile, ServiceSettings, SiteSearchResultGroup, SiteSummary, TranslationFailure, TranslationTask, UrlImportResponse } from '../types.js';
 
 const nav = [
@@ -23,9 +24,10 @@ export function App() {
   const [translationTasks, setTranslationTasks] = useState<TranslationTask[]>([]);
   const [chapters, setChapters] = useState<ChapterRef[]>([]);
   const [selectedBookUrl, setSelectedBookUrl] = useState('');
-  const [message, setMessage] = useState('');
+  const [message, setMessage] = useState('准备就绪');
 
   async function refresh() {
+    setMessage(`正在连接 ${serviceUrl()}`);
     const [siteList, taskList, translationTaskList, bookList] = await Promise.all([
       apiGet<SiteSummary[]>('/api/sites'),
       apiGet<DownloadTask[]>('/api/downloads'),
@@ -36,7 +38,7 @@ export function App() {
     setTasks(taskList);
     setTranslationTasks(translationTaskList);
     setBooks(bookList);
-    setMessage('');
+    setMessage(`已连接 ${serviceUrl()}`);
   }
 
   async function refreshWithMessage() {
@@ -77,8 +79,8 @@ export function App() {
     const result = await apiPost<UrlImportResponse>('/api/import-url', { url });
     setSelectedBookUrl(result.book.canonicalUrl);
     setChapters(result.catalog);
-    await refresh();
     setMessage(`已导入《${result.book.title}》目录 ${result.catalogCount} 章`);
+    await refresh();
     return result;
   }
 
@@ -93,14 +95,9 @@ export function App() {
       setMessage('未找到匹配此 URL domain 的站点');
       return;
     }
+    setMessage('下载任务已提交');
     await apiPost('/api/downloads', { siteId, bookUrl });
     await refresh();
-    setMessage('下载任务已提交');
-  }
-
-  function openPreview(bookUrl = selectedBookUrl) {
-    if (bookUrl) setSelectedBookUrl(bookUrl);
-    setActive('preview');
   }
 
   return (
@@ -118,7 +115,7 @@ export function App() {
         <header className="topbar">
           <div>
             <strong>{nav.find((item) => item.id === active)?.label}</strong>
-            {message && <span>{message}</span>}
+            <span>{message}</span>
           </div>
           <button className="primary" onClick={refreshWithMessage}>刷新</button>
         </header>
@@ -126,8 +123,8 @@ export function App() {
         {active === 'search' && <SearchView sites={sites} selectedBookUrl={selectedBookUrl} setSelectedBookUrl={setSelectedBookUrl} onImportUrl={importUrl} onDownload={startDownload} />}
         {active === 'downloads' && <DownloadsView tasks={tasks} refresh={refresh} />}
         {active === 'translations' && <TranslationsView books={books} selectedBookUrl={selectedBookUrl} setSelectedBookUrl={setSelectedBookUrl} tasks={translationTasks} refresh={refresh} />}
-        {active === 'library' && <LibraryView books={books} onPreview={openPreview} />}
-        {active === 'package' && <PackageView books={books} selectedBookUrl={selectedBookUrl} setSelectedBookUrl={setSelectedBookUrl} onPreview={openPreview} />}
+        {active === 'library' && <LibraryView books={books} selectedBookUrl={selectedBookUrl} setSelectedBookUrl={setSelectedBookUrl} setActive={setActive} refresh={refresh} setMessage={setMessage} />}
+        {active === 'package' && <PackageView books={books} selectedBookUrl={selectedBookUrl} setSelectedBookUrl={setSelectedBookUrl} />}
         {active === 'preview' && <PreviewView book={selectedBook} chapters={chapters} />}
         {active === 'ai' && <AiUsageView />}
         {active === 'settings' && <SettingsView />}
@@ -324,11 +321,27 @@ function TranslationFailureList({ failures }: { failures: TranslationFailure[] }
   return <div className="failureList"><header><strong>翻译失败章节</strong><span>{failures.length} 条</span></header><table><thead><tr><th>序号</th><th>章节</th><th>目标语言</th><th>尝试</th><th>错误</th></tr></thead><tbody>{failures.map((failure) => <tr key={failure.chapterUrl}><td>{failure.chapterIndex}</td><td>{failure.title}</td><td>{failure.targetLanguage}</td><td>{failure.attempts}</td><td>{failure.error}</td></tr>)}</tbody></table></div>;
 }
 
-function LibraryView({ books, onPreview }: { books: BookInfo[]; onPreview: (bookUrl: string) => void }) {
-  return <section className="panel"><h2>本地书库</h2><table><thead><tr><th>书名</th><th>作者</th><th>分类</th><th>状态</th><th>操作</th></tr></thead><tbody>{books.map((book) => <tr key={book.canonicalUrl} onClick={() => onPreview(book.canonicalUrl)}><td>{book.title}</td><td>{book.author}</td><td>{book.category}</td><td>{book.status}</td><td><div className="tableActions"><button onClick={(event) => { event.stopPropagation(); onPreview(book.canonicalUrl); }}><Eye size={14} />预览</button></div></td></tr>)}</tbody></table></section>;
+function LibraryView({ books, selectedBookUrl, setSelectedBookUrl, setActive, refresh, setMessage }: { books: BookInfo[]; selectedBookUrl: string; setSelectedBookUrl: (value: string) => void; setActive: (value: string) => void; refresh: () => Promise<void>; setMessage: (value: string) => void }) {
+  async function deleteBook(book: BookInfo, event: MouseEvent<HTMLButtonElement>) {
+    event.stopPropagation();
+    const confirmed = window.confirm(`删除《${book.title}》及其本地章节、译文和语言检测记录？`);
+    if (!confirmed) return;
+    try {
+      await apiDelete(`/api/library/books?bookUrl=${encodeURIComponent(book.canonicalUrl)}`);
+      if (selectedBookUrl === book.canonicalUrl || selectedBookUrl === book.sourceUrl) {
+        setSelectedBookUrl('');
+      }
+      setMessage(`已删除《${book.title}》`);
+      await refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  return <section className="panel"><h2>本地书库</h2><table><thead><tr><th>书名</th><th>作者</th><th>分类</th><th>状态</th><th>操作</th></tr></thead><tbody>{books.map((book) => <tr key={book.canonicalUrl} onClick={() => { setSelectedBookUrl(book.canonicalUrl); setActive('preview'); }}><td>{book.title}</td><td>{book.author}</td><td>{book.category}</td><td>{book.status}</td><td><div className="tableActions"><button className="danger" onClick={(event) => deleteBook(book, event)} title="删除本地书籍"><Trash2 size={14} />删除</button></div></td></tr>)}</tbody></table>{books.length === 0 && <p>还没有已下载或已导入的书籍。</p>}</section>;
 }
 
-function PackageView({ books, selectedBookUrl, setSelectedBookUrl, onPreview }: { books: BookInfo[]; selectedBookUrl: string; setSelectedBookUrl: (value: string) => void; onPreview: (bookUrl?: string) => void }) {
+function PackageView({ books, selectedBookUrl, setSelectedBookUrl }: { books: BookInfo[]; selectedBookUrl: string; setSelectedBookUrl: (value: string) => void }) {
   const [format, setFormat] = useState('markdown');
   const [language, setLanguage] = useState('original');
   const [languages, setLanguages] = useState<string[]>([]);
@@ -362,7 +375,7 @@ function PackageView({ books, selectedBookUrl, setSelectedBookUrl, onPreview }: 
     }
   }
 
-  return <section className="panel"><h2>导出</h2><div className="exportGrid"><label><span>书籍</span><select value={selectedBookUrl} onChange={(event) => { setSelectedBookUrl(event.target.value); setFileName(''); setLanguage('original'); }}>{books.map((book) => <option key={book.canonicalUrl} value={book.canonicalUrl}>{book.title}</option>)}</select></label><label><span>格式</span><select value={format} onChange={(event) => setFormat(event.target.value)}><option value="markdown">Markdown</option><option value="txt">TXT</option><option value="zip">ZIP: Markdown + TXT</option></select></label><label><span>内容语言</span><select value={language} onChange={(event) => setLanguage(event.target.value)}><option value="original">原文</option>{languages.map((item) => <option key={item} value={item}>{item}</option>)}</select></label><label><span>导出目录</span><input value={outputDir} onChange={(event) => setOutputDir(event.target.value)} placeholder="./exports" /></label><label><span>文件名</span><input value={fileName} onChange={(event) => setFileName(event.target.value)} placeholder={selectedBook?.title ?? 'novel'} /></label></div><div className="formRow"><button className="primary" onClick={exportBook} disabled={!selectedBookUrl || books.length === 0}>导出文件</button><button onClick={() => onPreview(selectedBookUrl)} disabled={!selectedBookUrl || books.length === 0}><Eye size={14} />预览内容</button><span>{selectedBook ? `${selectedBook.author ?? '未知作者'} · ${selectedBook.category ?? '未分类'}` : '未选择书籍'}</span></div><p>{result || '下载内容保存在当前存储后端，导出时按这里的格式和路径生成文件。'}</p></section>;
+  return <section className="panel"><h2>导出</h2><div className="exportGrid"><label><span>书籍</span><select value={selectedBookUrl} onChange={(event) => { setSelectedBookUrl(event.target.value); setFileName(''); setLanguage('original'); }}>{books.map((book) => <option key={book.canonicalUrl} value={book.canonicalUrl}>{book.title}</option>)}</select></label><label><span>格式</span><select value={format} onChange={(event) => setFormat(event.target.value)}><option value="markdown">Markdown</option><option value="txt">TXT</option><option value="zip">ZIP: Markdown + TXT</option></select></label><label><span>内容语言</span><select value={language} onChange={(event) => setLanguage(event.target.value)}><option value="original">原文</option>{languages.map((item) => <option key={item} value={item}>{item}</option>)}</select></label><label><span>导出目录</span><input value={outputDir} onChange={(event) => setOutputDir(event.target.value)} placeholder="./exports" /></label><label><span>文件名</span><input value={fileName} onChange={(event) => setFileName(event.target.value)} placeholder={selectedBook?.title ?? 'novel'} /></label></div><div className="formRow"><button className="primary" onClick={exportBook} disabled={!selectedBookUrl || books.length === 0}>导出文件</button><span>{selectedBook ? `${selectedBook.author ?? '未知作者'} · ${selectedBook.category ?? '未分类'}` : '未选择书籍'}</span></div><p>{result || '下载内容保存在当前存储后端，导出时按这里的格式和路径生成文件。'}</p></section>;
 }
 
 function PreviewView({ book, chapters }: { book?: BookInfo; chapters: ChapterRef[] }) {
@@ -414,7 +427,7 @@ function PreviewView({ book, chapters }: { book?: BookInfo; chapters: ChapterRef
 
   const showCompare = showOriginalCompare && language !== 'original' && originalChapter && chapter;
 
-  return <div className="preview"><section className="panel"><h2>{book?.title ?? '未选择书籍'}</h2>{book?.description && <p>{book.description}</p>}<div className="meta"><span>{book?.author}</span><span>{book?.category}</span><span>{book?.status}</span></div><div className="readerTools"><label><span>查看语言</span><select value={language} onChange={(event) => setLanguage(event.target.value)}><option value="original">原文</option>{languages.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>{language !== 'original' && <label className="checkLine"><input type="checkbox" checked={showOriginalCompare} onChange={(event) => setShowOriginalCompare(event.target.checked)} />原文对照</label>}<button onClick={retranslateCurrentChapter} disabled={!selectedRef || language === 'original'}><RotateCcw size={14} />重新翻译本章</button><span>{message}</span></div></section><section className="panel"><h2>目录</h2>{chapters.length > 0 ? <div className="chapterList">{chapters.map((item) => <button key={item.sourceUrl} onClick={() => openChapter(item)}>{item.index}. {item.title}</button>)}</div> : <p>当前书籍还没有可预览的本地章节，请先完成下载。</p>}</section><section className="panel reader"><h2>{chapter?.title ?? '章节预览'}</h2>{showCompare ? <div className="readerCompare"><article><header>原文</header><pre>{originalChapter.text}</pre></article><article><header>{language}</header><pre>{chapter.text}</pre></article></div> : <pre>{chapter?.text ?? '选择已下载章节后显示正文。'}</pre>}</section></div>;
+  return <div className="preview"><section className="panel"><h2>{book?.title ?? '未选择书籍'}</h2><p>{book?.description}</p><div className="meta"><span>{book?.author}</span><span>{book?.category}</span><span>{book?.status}</span></div><div className="readerTools"><label><span>查看语言</span><select value={language} onChange={(event) => setLanguage(event.target.value)}><option value="original">原文</option>{languages.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>{language !== 'original' && <label className="checkLine"><input type="checkbox" checked={showOriginalCompare} onChange={(event) => setShowOriginalCompare(event.target.checked)} />原文对照</label>}<button onClick={retranslateCurrentChapter} disabled={!selectedRef || language === 'original'}><RotateCcw size={14} />重新翻译本章</button><span>{message}</span></div></section><section className="panel"><h2>目录</h2><div className="chapterList">{chapters.map((item) => <button key={item.sourceUrl} onClick={() => openChapter(item)}>{item.index}. {item.title}</button>)}</div></section><section className="panel reader"><h2>{chapter?.title ?? '章节预览'}</h2>{showCompare ? <div className="readerCompare"><article><header>原文</header><pre>{originalChapter.text}</pre></article><article><header>{language}</header><pre>{chapter.text}</pre></article></div> : <pre>{chapter?.text ?? '选择已下载章节后显示正文。'}</pre>}</section></div>;
 }
 
 function AiUsageView() {
