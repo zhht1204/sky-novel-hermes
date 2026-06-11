@@ -8,7 +8,7 @@ import pinoHttp from 'pino-http';
 import { WebSocketServer } from 'ws';
 import { createLiteLlmClientFromEnv } from '@sky-novel-hermes/ai';
 import { safeFileName, toMarkdown, toPlainText, toZip } from '@sky-novel-hermes/exporter';
-import type { AiUsageRecord, ChapterContent } from '@sky-novel-hermes/shared';
+import type { AiUsageRecord, BookInfo, ChapterContent, ChapterRef } from '@sky-novel-hermes/shared';
 import { getSite, getSites } from '@sky-novel-hermes/sites';
 import { HermesDatabase } from '@sky-novel-hermes/storage';
 import { loadConfig, normalizeTranslationSettings, saveSettings, type AppSettings } from './config.js';
@@ -152,12 +152,22 @@ app.post('/api/sites/:siteId/catalog', async (req, res, next) => {
 app.post('/api/import-url', async (req, res, next) => {
   try {
     const url = String(req.body.url ?? '').trim();
+    const duplicateMode = req.body.duplicateMode === 'append' || req.body.duplicateMode === 'overwrite' ? req.body.duplicateMode as 'append' | 'overwrite' : undefined;
+    const conflict = await getImportConflict(url);
+    if (!duplicateMode && hasImportConflict(conflict)) {
+      res.status(409).json({ error: 'Import target already exists', code: 'IMPORT_CONFLICT', ...conflict });
+      return;
+    }
     const site = getSiteForUrl(url);
-    const book = await site.getBookInfo({ url });
-    const catalog = await site.getCatalog({ bookUrl: url });
+    const normalizedUrl = normalizeImportUrl(url);
+    const fetchedBook = await site.getBookInfo({ url: normalizedUrl });
+    const fetchedCatalog = await site.getCatalog({ bookUrl: normalizedUrl });
+    const { book, catalog } = duplicateMode === 'append'
+      ? applyCopyIdentity(fetchedBook, fetchedCatalog, createCopyMarker(String(req.body.duplicateSuffix ?? 'copy')), String(req.body.duplicateSuffix ?? 'copy'))
+      : { book: fetchedBook, catalog: fetchedCatalog };
     await db.upsertBook(book);
     await db.upsertCatalog(catalog);
-    res.json({ book, catalog, catalogCount: catalog.length });
+    res.json({ book, catalog, catalogCount: catalog.length, duplicateMode: duplicateMode ?? 'overwrite' });
   } catch (error) {
     next(error);
   }
@@ -445,7 +455,8 @@ app.post('/api/export', async (req, res, next) => {
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   const message = error instanceof Error ? error.message : String(error);
   logger.error({ error }, message);
-  res.status(error instanceof ActiveTaskError || error instanceof ActiveTranslationTaskError ? 409 : 500).json({ error: message });
+  const status = error instanceof ActiveTaskError || error instanceof ActiveTranslationTaskError || message.startsWith('Cancelled ') ? 409 : 500;
+  res.status(status).json({ error: message });
 });
 
 const server = createServer(app);
@@ -482,6 +493,61 @@ function getSiteForUrl(url: string) {
     throw new Error(`No registered site supports URL: ${url}`);
   }
   return site;
+}
+
+async function getImportConflict(url: string) {
+  const normalizedUrl = normalizeImportUrl(url);
+  const [books, downloadTasks, translationTasks] = await Promise.all([db.listBooks(), db.listTasks(), db.listTranslationTasks()]);
+  return {
+    normalizedUrl,
+    existingBooks: books
+      .filter((book) => normalizeImportUrl(book.sourceUrl) === normalizedUrl || normalizeImportUrl(book.canonicalUrl) === normalizedUrl)
+      .map((book) => ({ title: book.title, canonicalUrl: book.canonicalUrl, sourceUrl: book.sourceUrl, createdAt: book.createdAt })),
+    downloadTasks: downloadTasks
+      .filter((task) => normalizeImportUrl(task.bookUrl) === normalizedUrl)
+      .map((task) => ({ id: task.id, status: task.status, bookUrl: task.bookUrl, updatedAt: task.updatedAt })),
+    translationTasks: translationTasks
+      .filter((task) => normalizeImportUrl(task.bookUrl) === normalizedUrl)
+      .map((task) => ({ id: task.id, status: task.status, bookUrl: task.bookUrl, targetLanguage: task.targetLanguage, updatedAt: task.updatedAt })),
+  };
+}
+
+function hasImportConflict(conflict: Awaited<ReturnType<typeof getImportConflict>>): boolean {
+  return conflict.existingBooks.length > 0 || conflict.downloadTasks.length > 0 || conflict.translationTasks.length > 0;
+}
+
+function normalizeImportUrl(url: string): string {
+  const parsed = new URL(url);
+  if (parsed.hash.startsWith('#hermes-copy-')) parsed.hash = '';
+  return parsed.toString();
+}
+
+function createCopyMarker(suffix: string): string {
+  return `hermes-copy-${Date.now()}-${encodeURIComponent((suffix.trim() || 'copy').replace(/\s+/g, '-'))}`;
+}
+
+function applyCopyIdentity(book: BookInfo, catalog: ChapterRef[], marker: string, suffix: string): { book: BookInfo; catalog: ChapterRef[] } {
+  const cleanSuffix = suffix.trim() || 'copy';
+  const copyBookUrl = withCopyMarker(book.canonicalUrl, marker);
+  return {
+    book: {
+      ...book,
+      sourceUrl: withCopyMarker(book.sourceUrl, marker),
+      canonicalUrl: copyBookUrl,
+      title: book.title.endsWith(`（${cleanSuffix}）`) ? book.title : `${book.title}（${cleanSuffix}）`,
+    },
+    catalog: catalog.map((chapter) => ({
+      ...chapter,
+      bookUrl: copyBookUrl,
+      sourceUrl: withCopyMarker(chapter.sourceUrl, marker),
+    })),
+  };
+}
+
+function withCopyMarker(url: string, marker: string): string {
+  const parsed = new URL(normalizeImportUrl(url));
+  parsed.hash = marker;
+  return parsed.toString();
 }
 
 function normalizeSettings(input: unknown): AppSettings {

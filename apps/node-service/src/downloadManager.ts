@@ -46,6 +46,7 @@ export class DownloadManager extends EventEmitter {
   async resumeTask(taskId: string): Promise<DownloadTask> {
     const task = (await this.db.listTasks()).find((candidate) => candidate.id === taskId);
     if (!task) throw new Error(`Download task not found: ${taskId}`);
+    if (task.status === 'cancelled') throw new Error('Cancelled download tasks cannot be resumed');
     if (this.isFreshActiveTask(task)) {
       throw new ActiveTaskError('Download task is already running');
     }
@@ -69,6 +70,7 @@ export class DownloadManager extends EventEmitter {
   async retryFailed(taskId: string): Promise<DownloadTask> {
     const task = (await this.db.listTasks()).find((candidate) => candidate.id === taskId);
     if (!task) throw new Error(`Download task not found: ${taskId}`);
+    if (task.status === 'cancelled') throw new Error('Cancelled download tasks cannot be retried');
     if (this.isFreshActiveTask(task)) {
       throw new ActiveTaskError('Download task is already running');
     }
@@ -133,9 +135,9 @@ export class DownloadManager extends EventEmitter {
     try {
       await this.updateTask({ ...task, status: 'running', updatedAt: nowIso(), message: 'Fetching book metadata' });
       await this.db.clearFailures(task.id);
-      const book = await site.getBookInfo({ url: task.bookUrl });
-      await this.db.upsertBook(book);
-      const catalog = await site.getCatalog({ bookUrl: task.bookUrl });
+      const book = await site.getBookInfo({ url: stripLocalCopySuffix(task.bookUrl) });
+      await this.db.upsertBook(localizeBook(book, task.bookUrl));
+      const catalog = localizeCatalog(await site.getCatalog({ bookUrl: stripLocalCopySuffix(task.bookUrl) }), task.bookUrl);
       await this.db.upsertCatalog(catalog);
 
       let current = { ...task, status: 'running' as const, totalChapters: catalog.length, updatedAt: nowIso(), message: 'Downloading chapters' };
@@ -144,7 +146,7 @@ export class DownloadManager extends EventEmitter {
       for (const chapter of catalog) {
         if (await this.pauseIfRequested(current)) return;
         try {
-          const content = await this.fetchChapterWithRetries(site, task.bookUrl, chapter);
+          const content = localizeChapterContent(await this.fetchChapterWithRetries(site, task.bookUrl, chapter), chapter);
           await this.db.upsertChapterContent(content);
           await this.db.clearFailure(task.id, chapter.sourceUrl);
           current = { ...current, completedChapters: current.completedChapters + 1, updatedAt: nowIso(), message: chapter.title };
@@ -177,7 +179,7 @@ export class DownloadManager extends EventEmitter {
         if (await this.pauseIfRequested(current)) return;
         if (await this.isChapterDownloaded(chapter)) continue;
         try {
-          const content = await this.fetchChapterWithRetries(site, task.bookUrl, chapter);
+          const content = localizeChapterContent(await this.fetchChapterWithRetries(site, task.bookUrl, chapter), chapter);
           await this.db.upsertChapterContent(content);
           await this.db.clearFailure(task.id, chapter.sourceUrl);
           current = { ...current, completedChapters: current.completedChapters + 1, updatedAt: nowIso(), message: chapter.title };
@@ -216,7 +218,7 @@ export class DownloadManager extends EventEmitter {
           title: failure.title,
         };
         try {
-          const content = await this.fetchChapterWithRetries(site, task.bookUrl, chapter);
+          const content = localizeChapterContent(await this.fetchChapterWithRetries(site, task.bookUrl, chapter), chapter);
           await this.db.upsertChapterContent(content);
           await this.db.clearFailure(task.id, failure.chapterUrl);
           current = { ...current, completedChapters: current.completedChapters + 1, updatedAt: nowIso(), message: chapter.title };
@@ -240,9 +242,9 @@ export class DownloadManager extends EventEmitter {
     const cached = await this.db.listChapters(task.bookUrl);
     if (cached.length > 0) return cached;
     const site = this.getSite(task.siteId);
-    const book = await site.getBookInfo({ url: task.bookUrl });
-    await this.db.upsertBook(book);
-    const catalog = await site.getCatalog({ bookUrl: task.bookUrl });
+    const book = await site.getBookInfo({ url: stripLocalCopySuffix(task.bookUrl) });
+    await this.db.upsertBook(localizeBook(book, task.bookUrl));
+    const catalog = localizeCatalog(await site.getCatalog({ bookUrl: stripLocalCopySuffix(task.bookUrl) }), task.bookUrl);
     await this.db.upsertCatalog(catalog);
     return catalog;
   }
@@ -264,7 +266,7 @@ export class DownloadManager extends EventEmitter {
     let lastError: unknown;
     for (let attempt = 1; attempt <= this.maxChapterAttempts; attempt += 1) {
       try {
-        return await site.getChapter({ bookUrl, chapterUrl: chapter.sourceUrl });
+        return await site.getChapter({ bookUrl: stripLocalCopySuffix(bookUrl), chapterUrl: stripLocalCopySuffix(chapter.sourceUrl) });
       } catch (error) {
         lastError = error;
         if (attempt < this.maxChapterAttempts) await delay(500 * attempt);
@@ -318,3 +320,49 @@ export class DownloadManager extends EventEmitter {
 }
 
 export class ActiveTaskError extends Error {}
+
+function localizeBook<T extends { canonicalUrl: string; sourceUrl: string; title: string }>(book: T, bookUrl: string): T {
+  if (!hasLocalCopySuffix(bookUrl)) return book;
+  return { ...book, canonicalUrl: bookUrl, sourceUrl: bookUrl, title: appendCopyLabel(book.title, bookUrl) };
+}
+
+function localizeCatalog(chapters: ChapterRef[], bookUrl: string): ChapterRef[] {
+  if (!hasLocalCopySuffix(bookUrl)) return chapters;
+  return chapters.map((chapter) => ({ ...chapter, bookUrl, sourceUrl: addLocalCopySuffix(chapter.sourceUrl, localCopySuffix(bookUrl)) }));
+}
+
+function localizeChapterContent<T extends { bookUrl: string; sourceUrl: string; title: string; index?: number }>(content: T, chapter: ChapterRef): T {
+  return { ...content, bookUrl: chapter.bookUrl, sourceUrl: chapter.sourceUrl, title: chapter.title, index: chapter.index };
+}
+
+function appendCopyLabel(title: string, url: string): string {
+  const label = localCopyLabel(url);
+  return title.endsWith(`（${label}）`) ? title : `${title}（${label}）`;
+}
+
+function addLocalCopySuffix(value: string, suffix: string): string {
+  const url = new URL(stripLocalCopySuffix(value));
+  url.hash = suffix;
+  return url.toString();
+}
+
+function stripLocalCopySuffix(value: string): string {
+  const url = new URL(value);
+  if (url.hash.startsWith('#hermes-copy-')) url.hash = '';
+  return url.toString();
+}
+
+function hasLocalCopySuffix(value: string): boolean {
+  return new URL(value).hash.startsWith('#hermes-copy-');
+}
+
+function localCopySuffix(value: string): string {
+  const hash = new URL(value).hash.replace(/^#/, '');
+  return hash.startsWith('hermes-copy-') ? hash : 'hermes-copy-local';
+}
+
+function localCopyLabel(value: string): string {
+  const match = localCopySuffix(value).match(/^hermes-copy-\d+-(.+)$/);
+  const encodedLabel = match?.[1];
+  return encodedLabel ? decodeURIComponent(encodedLabel).replace(/-/g, ' ') : 'copy';
+}

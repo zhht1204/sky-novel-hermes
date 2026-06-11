@@ -81,6 +81,16 @@ export interface UrlImportResponse {
   book: BookInfo;
   catalog: ChapterRef[];
   catalogCount: number;
+  duplicateMode?: 'overwrite' | 'append';
+}
+
+export interface ImportConflictResponse {
+  error: string;
+  code: 'IMPORT_CONFLICT';
+  normalizedUrl: string;
+  existingBooks: Array<Pick<BookInfo, 'title' | 'canonicalUrl' | 'sourceUrl' | 'createdAt'>>;
+  downloadTasks: Array<Pick<DownloadTask, 'id' | 'status' | 'bookUrl' | 'updatedAt'>>;
+  translationTasks: Array<Pick<TranslationTask, 'id' | 'status' | 'bookUrl' | 'targetLanguage' | 'updatedAt'>>;
 }
 
 export type StorageBackend = 'sqlite' | 'postgres';

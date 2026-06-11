@@ -1,8 +1,8 @@
 import { Archive, BookOpen, BrainCircuit, Download, Eye, Home, Languages, Package, Pause, Play, RotateCcw, Search, Settings, Trash2, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import type { MouseEvent } from 'react';
-import { apiDelete, apiGet, apiPost, serviceUrl, serviceWsUrl } from '../api.js';
-import type { AggregatedSearchResponse, AiUsageRecord, AiUsageSummary, BookInfo, ChapterContent, ChapterRef, ChapterTranslation, DownloadFailure, DownloadTask, ExportResponse, LanguageProfile, ServiceSettings, SiteSearchResultGroup, SiteSummary, TranslationFailure, TranslationTask, UrlImportResponse } from '../types.js';
+import { ApiError, apiDelete, apiGet, apiPost, serviceUrl, serviceWsUrl } from '../api.js';
+import type { AggregatedSearchResponse, AiUsageRecord, AiUsageSummary, BookInfo, ChapterContent, ChapterRef, ChapterTranslation, DownloadFailure, DownloadTask, ExportResponse, ImportConflictResponse, LanguageProfile, ServiceSettings, SiteSearchResultGroup, SiteSummary, TranslationFailure, TranslationTask, UrlImportResponse } from '../types.js';
 
 const nav = [
   { id: 'home', label: '主页', icon: Home },
@@ -73,13 +73,13 @@ export function App() {
 
   const selectedBook = useMemo(() => books.find((book) => book.canonicalUrl === selectedBookUrl || book.sourceUrl === selectedBookUrl), [books, selectedBookUrl]);
 
-  async function importUrl(url: string): Promise<UrlImportResponse> {
+  async function importUrl(url: string, options: { duplicateMode?: 'overwrite' | 'append'; duplicateSuffix?: string } = {}): Promise<UrlImportResponse> {
     setMessage('正在解析 URL 并导入目录');
-    const result = await apiPost<UrlImportResponse>('/api/import-url', { url });
+    const result = await apiPost<UrlImportResponse>('/api/import-url', { url, ...options });
     setSelectedBookUrl(result.book.canonicalUrl);
     setChapters(result.catalog);
     await refresh();
-    setMessage(`已导入《${result.book.title}》目录 ${result.catalogCount} 章`);
+    setMessage(`已${result.duplicateMode === 'append' ? '作为副本' : '导入'}《${result.book.title}》目录 ${result.catalogCount} 章`);
     return result;
   }
 
@@ -140,12 +140,14 @@ function Metric({ label, value }: { label: string; value: number }) {
   return <section className="metric"><span>{label}</span><strong>{value}</strong></section>;
 }
 
-function SearchView({ sites, selectedBookUrl, setSelectedBookUrl, onImportUrl, onDownload }: { sites: SiteSummary[]; selectedBookUrl: string; setSelectedBookUrl: (value: string) => void; onImportUrl: (url: string) => Promise<UrlImportResponse>; onDownload: () => void }) {
+function SearchView({ sites, selectedBookUrl, setSelectedBookUrl, onImportUrl, onDownload }: { sites: SiteSummary[]; selectedBookUrl: string; setSelectedBookUrl: (value: string) => void; onImportUrl: (url: string, options?: { duplicateMode?: 'overwrite' | 'append'; duplicateSuffix?: string }) => Promise<UrlImportResponse>; onDownload: () => void }) {
   const [keyword, setKeyword] = useState('');
   const [selectedSiteIds, setSelectedSiteIds] = useState<string[]>([]);
   const [searchGroups, setSearchGroups] = useState<SiteSearchResultGroup[]>([]);
   const [importedBook, setImportedBook] = useState<BookInfo | undefined>();
   const [catalogPreview, setCatalogPreview] = useState<ChapterRef[]>([]);
+  const [importConflict, setImportConflict] = useState<ImportConflictResponse | undefined>();
+  const [duplicateSuffix, setDuplicateSuffix] = useState('副本');
 
   const searchableSites = sites.filter((site) => site.capabilities.includes('search'));
 
@@ -163,12 +165,37 @@ function SearchView({ sites, selectedBookUrl, setSelectedBookUrl, onImportUrl, o
   }
 
   async function parseUrl() {
-    const result = await onImportUrl(selectedBookUrl);
+    try {
+      const result = await onImportUrl(selectedBookUrl);
+      setImportConflict(undefined);
+      setImportedBook(result.book);
+      setCatalogPreview(result.catalog);
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 409 && isImportConflict(error.data)) {
+        setImportConflict(error.data);
+        return;
+      }
+      throw error;
+    }
+  }
+
+  async function resolveDuplicate(duplicateMode: 'overwrite' | 'append') {
+    const result = await onImportUrl(selectedBookUrl, { duplicateMode, duplicateSuffix });
+    setImportConflict(undefined);
     setImportedBook(result.book);
     setCatalogPreview(result.catalog);
   }
 
-  return <div className="stack"><section className="panel"><h2>聚合搜索</h2><div className="sitePicker">{searchableSites.map((site) => <label key={site.id}><input type="checkbox" checked={selectedSiteIds.includes(site.id)} onChange={() => toggleSite(site.id)} />{site.displayName}</label>)}</div><div className="formRow"><input placeholder="书名或作者" value={keyword} onChange={(event) => setKeyword(event.target.value)} /><button onClick={search} disabled={selectedSiteIds.length === 0 || !keyword.trim()}>同步搜索</button></div><div className="searchGroups">{searchGroups.map((group) => <section className="sourceGroup" key={group.siteId}><header><strong>{group.displayName}</strong><span>{group.error ? group.error : `${group.results.length} 条结果`}</span></header><div className="resultList">{group.results.map((result) => <button key={`${result.siteId}:${result.url}`} onClick={() => setSelectedBookUrl(result.url)}><strong>{result.title}</strong><span>{result.author ?? result.url}</span></button>)}</div></section>)}</div></section><section className="panel"><h2>URL 导入</h2><div className="formRow"><input value={selectedBookUrl} onChange={(event) => setSelectedBookUrl(event.target.value)} placeholder="https://source.example/path/book.html" /><button onClick={parseUrl} disabled={!selectedBookUrl.trim()}>解析目录</button><button className="primary" onClick={onDownload} disabled={!selectedBookUrl.trim()}>开始下载</button></div>{importedBook && <div className="bookSummary">{importedBook.coverUrl && <img src={importedBook.coverUrl} alt="" />}<div><strong>{importedBook.title}</strong><span>{[importedBook.author, importedBook.category, importedBook.status].filter(Boolean).join(' · ')}</span><p>{importedBook.description}</p></div></div>}<CatalogPreview chapters={catalogPreview} /></section></div>;
+  return <div className="stack"><section className="panel"><h2>聚合搜索</h2><div className="sitePicker">{searchableSites.map((site) => <label key={site.id}><input type="checkbox" checked={selectedSiteIds.includes(site.id)} onChange={() => toggleSite(site.id)} />{site.displayName}</label>)}</div><div className="formRow"><input placeholder="书名或作者" value={keyword} onChange={(event) => setKeyword(event.target.value)} /><button onClick={search} disabled={selectedSiteIds.length === 0 || !keyword.trim()}>同步搜索</button></div><div className="searchGroups">{searchGroups.map((group) => <section className="sourceGroup" key={group.siteId}><header><strong>{group.displayName}</strong><span>{group.error ? group.error : `${group.results.length} 条结果`}</span></header><div className="resultList">{group.results.map((result) => <button key={`${result.siteId}:${result.url}`} onClick={() => setSelectedBookUrl(result.url)}><strong>{result.title}</strong><span>{result.author ?? result.url}</span></button>)}</div></section>)}</div></section><section className="panel"><h2>URL 导入</h2><div className="formRow"><input value={selectedBookUrl} onChange={(event) => { setSelectedBookUrl(event.target.value); setImportConflict(undefined); }} placeholder="https://source.example/path/book.html" /><button onClick={parseUrl} disabled={!selectedBookUrl.trim()}>解析目录</button><button className="primary" onClick={onDownload} disabled={!selectedBookUrl.trim()}>开始下载</button></div>{importConflict && <ImportConflictPanel conflict={importConflict} duplicateSuffix={duplicateSuffix} setDuplicateSuffix={setDuplicateSuffix} onResolve={resolveDuplicate} />}{importedBook && <div className="bookSummary">{importedBook.coverUrl && <img src={importedBook.coverUrl} alt="" />}<div><strong>{importedBook.title}</strong><span>{[importedBook.author, importedBook.category, importedBook.status].filter(Boolean).join(' · ')}</span><p>{importedBook.description}</p></div></div>}<CatalogPreview chapters={catalogPreview} /></section></div>;
+}
+
+function isImportConflict(value: unknown): value is ImportConflictResponse {
+  return Boolean(value && typeof value === 'object' && (value as ImportConflictResponse).code === 'IMPORT_CONFLICT');
+}
+
+function ImportConflictPanel({ conflict, duplicateSuffix, setDuplicateSuffix, onResolve }: { conflict: ImportConflictResponse; duplicateSuffix: string; setDuplicateSuffix: (value: string) => void; onResolve: (mode: 'overwrite' | 'append') => Promise<void> }) {
+  const chainCount = conflict.existingBooks.length + conflict.downloadTasks.length + conflict.translationTasks.length;
+  return <div className="conflictPanel"><header><strong>检测到相同 URL</strong><span>{chainCount} 条关联记录</span></header><p>此 URL 已存在本地书籍或任务。可以覆盖原记录，也可以作为副本导入，副本会用后缀标识为不同书籍。</p><div className="conflictList">{conflict.existingBooks.map((book) => <span key={book.canonicalUrl}>书籍：{book.title}</span>)}{conflict.downloadTasks.map((task) => <span key={task.id}>下载任务：{task.status}</span>)}{conflict.translationTasks.map((task) => <span key={task.id}>翻译任务：{task.status} · {task.targetLanguage}</span>)}</div><div className="formRow"><input value={duplicateSuffix} onChange={(event) => setDuplicateSuffix(event.target.value)} placeholder="副本后缀" /><button onClick={() => onResolve('append')}>作为副本导入</button><button className="primary" onClick={() => onResolve('overwrite')}>覆盖导入</button></div></div>;
 }
 
 function matchSiteByUrl(sites: SiteSummary[], url: string): SiteSummary | undefined {
@@ -222,7 +249,7 @@ function DownloadsView({ tasks, refresh }: { tasks: DownloadTask[]; refresh: () 
     await refresh();
   }
 
-  return <section className="panel"><h2>下载队列</h2><table><thead><tr><th>状态</th><th>进度</th><th>失败</th><th>消息</th><th>操作</th></tr></thead><tbody>{tasks.map((task) => <tr key={task.id}><td><span className={`badge ${task.status}`}>{task.status}</span></td><td>{task.completedChapters}/{task.totalChapters}</td><td>{task.failedChapters}</td><td>{task.message}</td><td><div className="tableActions"><button onClick={() => pauseTask(task)} disabled={!['queued', 'running'].includes(task.status)} title="暂停任务"><Pause size={14} />暂停</button><button onClick={() => resumeTask(task)} disabled={task.status === 'running' || task.status === 'completed'} title="继续缺失章节"><Play size={14} />继续</button><button onClick={() => cancelTask(task)} disabled={['completed', 'failed', 'cancelled'].includes(task.status)} title="取消任务"><X size={14} />取消</button><button onClick={() => toggleFailures(task)} disabled={task.failedChapters === 0}>失败明细</button><button onClick={() => retryFailed(task)} disabled={task.failedChapters === 0 || task.status === 'running'}>重试失败</button></div></td></tr>)}</tbody></table>{openTaskId && <FailureList failures={failures[openTaskId] ?? []} />}</section>;
+  return <section className="panel"><h2>下载队列</h2><table><thead><tr><th>状态</th><th>进度</th><th>失败</th><th>消息</th><th>操作</th></tr></thead><tbody>{tasks.map((task) => <tr key={task.id}><td><span className={`badge ${task.status}`}>{task.status}</span></td><td>{task.completedChapters}/{task.totalChapters}</td><td>{task.failedChapters}</td><td>{task.message}</td><td><div className="tableActions"><button onClick={() => pauseTask(task)} disabled={!['queued', 'running'].includes(task.status)} title="暂停任务"><Pause size={14} />暂停</button><button onClick={() => resumeTask(task)} disabled={['running', 'completed', 'cancelled'].includes(task.status)} title="继续缺失章节"><Play size={14} />继续</button><button onClick={() => cancelTask(task)} disabled={['completed', 'failed', 'cancelled'].includes(task.status)} title="取消任务"><X size={14} />取消</button><button onClick={() => toggleFailures(task)} disabled={task.failedChapters === 0}>失败明细</button><button onClick={() => retryFailed(task)} disabled={task.failedChapters === 0 || ['running', 'cancelled'].includes(task.status)}>重试失败</button></div></td></tr>)}</tbody></table>{openTaskId && <FailureList failures={failures[openTaskId] ?? []} />}</section>;
 }
 
 function FailureList({ failures }: { failures: DownloadFailure[] }) {

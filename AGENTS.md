@@ -81,6 +81,7 @@ Both adapters share the `packages/sites/src/quanben5` module and extract metadat
 - Store LiteLLM configuration in environment variables or local app settings.
 - Keep SQLite available as the default local cache; PostgreSQL can be selected in Settings or configured with `HERMES_STORAGE_BACKEND=postgres` plus `HERMES_DATABASE_URL` or `DATABASE_URL`.
 - Keep crawler logs structured and visible in the Download Manager.
+- Keep duplicate URL imports conflict-aware: surface existing books/download tasks/translation tasks, then require an explicit overwrite or append-copy choice. Cancelled download and translation tasks must not be resumable or retryable.
 - Keep Preview behavior documented in the README when reader, translation preview, compare, or retranslation workflows change.
 - Use small, testable parser functions with HTML fixtures.
 - When changing important app features, user-facing workflows, project operations, build scripts, CI workflows, release automation, supported tooling, or setup commands, update this `AGENTS.md` file with the new maintenance expectations and update the README when user-facing behavior or instructions change.

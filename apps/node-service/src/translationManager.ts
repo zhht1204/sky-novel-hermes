@@ -60,6 +60,7 @@ export class TranslationManager extends EventEmitter {
 
   async resumeTask(taskId: string): Promise<TranslationTask> {
     const task = await this.findTask(taskId);
+    if (task.status === 'cancelled') throw new Error('Cancelled translation tasks cannot be resumed');
     if (this.isFreshActiveTask(task)) throw new ActiveTranslationTaskError('Translation task is already running');
     this.pauseRequestedTaskIds.delete(task.id);
     this.cancelRequestedTaskIds.delete(task.id);
@@ -80,6 +81,7 @@ export class TranslationManager extends EventEmitter {
 
   async retryFailed(taskId: string): Promise<TranslationTask> {
     const task = await this.findTask(taskId);
+    if (task.status === 'cancelled') throw new Error('Cancelled translation tasks cannot be retried');
     if (this.isFreshActiveTask(task)) throw new ActiveTranslationTaskError('Translation task is already running');
     const failures = await this.db.listTranslationFailures(taskId);
     if (failures.length === 0) throw new Error('No failed chapters to retry');

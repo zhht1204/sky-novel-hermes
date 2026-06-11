@@ -143,6 +143,11 @@ tbody tr:hover { background: #f6f8fa; }
 .failureList { margin-top: 16px; padding: 12px; border: 1px solid #e1e7ed; border-radius: 8px; background: #f8fafb; }
 .failureList header { display: flex; justify-content: space-between; margin-bottom: 10px; color: #26323d; }
 .failureList header span { color: #687785; font-size: 13px; }
+.conflictPanel { display: grid; gap: 10px; margin-top: 14px; padding: 12px; border: 1px solid #f3c96b; border-radius: 8px; background: #fff8e8; }
+.conflictPanel header { display: flex; justify-content: space-between; gap: 12px; color: #26323d; }
+.conflictPanel header span, .conflictPanel p { color: #7a5a16; margin: 0; }
+.conflictList { display: flex; flex-wrap: wrap; gap: 8px; }
+.conflictList span { padding: 5px 8px; border-radius: 6px; background: #fff; color: #5f4210; border: 1px solid #f3d992; font-size: 13px; }
 .settingsGrid, .exportGrid, .translationControls { display: grid; gap: 12px; margin-bottom: 14px; }
 .exportGrid { grid-template-columns: repeat(2, minmax(220px, 1fr)); }
 .translationControls { grid-template-columns: minmax(260px, 1fr) minmax(180px, 240px) auto; align-items: end; }
