@@ -34,6 +34,9 @@ export class TranslationManager extends EventEmitter {
   }
 
   async createTask(bookUrl: string, targetLanguage: string, options: { force?: boolean; sourceLanguage?: string; chapterUrl?: string } = {}): Promise<TranslationTask> {
+    if (!this.ai.enabled) {
+      throw new Error('AI is not configured. Set LITELLM_BASE_URL and LITELLM_MODEL before starting translation.');
+    }
     const sourceLanguage = options.sourceLanguage || await this.resolveSourceLanguage(bookUrl);
     const chapters = await this.listTranslatableChapters(bookUrl, targetLanguage, Boolean(options.force), options.chapterUrl);
     const task: TranslationTask = {

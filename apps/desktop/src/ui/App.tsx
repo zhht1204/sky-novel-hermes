@@ -236,16 +236,25 @@ function TranslationsView({ books, selectedBookUrl, setSelectedBookUrl, tasks, r
   }, [selectedBookUrl]);
 
   async function detectLanguage() {
-    setMessage('正在检测源语言');
-    const data = await apiPost<LanguageProfile>('/api/library/language-profile/detect', { bookUrl: selectedBookUrl });
-    setProfile(data);
-    setMessage(`检测结果：${data.language} (${Math.round(data.confidence * 100)}%)`);
+    try {
+      setMessage('正在检测源语言');
+      const data = await apiPost<LanguageProfile>('/api/library/language-profile/detect', { bookUrl: selectedBookUrl });
+      setProfile(data);
+      setMessage(`检测结果：${data.language} (${Math.round(data.confidence * 100)}%)`);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
   }
 
   async function startTranslation() {
-    setMessage('翻译任务已提交');
-    await apiPost('/api/translations/tasks', { bookUrl: selectedBookUrl, targetLanguage, force, sourceLanguage: profile?.language });
-    await refresh();
+    try {
+      setMessage('正在提交翻译任务');
+      await apiPost('/api/translations/tasks', { bookUrl: selectedBookUrl, targetLanguage, force, sourceLanguage: profile?.language });
+      setMessage('翻译任务已提交');
+      await refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
   }
 
   async function toggleFailures(task: TranslationTask) {
@@ -273,9 +282,13 @@ function TranslationsView({ books, selectedBookUrl, setSelectedBookUrl, tasks, r
   }
 
   async function retryFailed(task: TranslationTask) {
-    await apiPost(`/api/translations/tasks/${task.id}/retry-failed`, {});
-    setFailures((current) => ({ ...current, [task.id]: [] }));
-    await refresh();
+    try {
+      await apiPost(`/api/translations/tasks/${task.id}/retry-failed`, {});
+      setFailures((current) => ({ ...current, [task.id]: [] }));
+      await refresh();
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
   }
 
   const bookTasks = tasks.filter((task) => !selectedBookUrl || task.bookUrl === selectedBookUrl);
@@ -319,8 +332,12 @@ function PackageView({ books, selectedBookUrl, setSelectedBookUrl }: { books: Bo
   }, [selectedBook?.canonicalUrl]);
 
   async function exportBook() {
-    const response = await apiPost<ExportResponse>('/api/export', { bookUrl: selectedBookUrl, format, outputDir, fileName, language });
-    setResult(`${response.filePath} (${response.chapterCount} 章)`);
+    try {
+      const response = await apiPost<ExportResponse>('/api/export', { bookUrl: selectedBookUrl, format, outputDir, fileName, language });
+      setResult(`${response.filePath} (${response.chapterCount} 章)`);
+    } catch (error) {
+      setResult(error instanceof Error ? error.message : String(error));
+    }
   }
 
   return <section className="panel"><h2>导出</h2><div className="exportGrid"><label><span>书籍</span><select value={selectedBookUrl} onChange={(event) => { setSelectedBookUrl(event.target.value); setFileName(''); setLanguage('original'); }}>{books.map((book) => <option key={book.canonicalUrl} value={book.canonicalUrl}>{book.title}</option>)}</select></label><label><span>格式</span><select value={format} onChange={(event) => setFormat(event.target.value)}><option value="markdown">Markdown</option><option value="txt">TXT</option><option value="zip">ZIP: Markdown + TXT</option></select></label><label><span>内容语言</span><select value={language} onChange={(event) => setLanguage(event.target.value)}><option value="original">原文</option>{languages.map((item) => <option key={item} value={item}>{item}</option>)}</select></label><label><span>导出目录</span><input value={outputDir} onChange={(event) => setOutputDir(event.target.value)} placeholder="./exports" /></label><label><span>文件名</span><input value={fileName} onChange={(event) => setFileName(event.target.value)} placeholder={selectedBook?.title ?? 'novel'} /></label></div><div className="formRow"><button className="primary" onClick={exportBook} disabled={!selectedBookUrl || books.length === 0}>导出文件</button><span>{selectedBook ? `${selectedBook.author ?? '未知作者'} · ${selectedBook.category ?? '未分类'}` : '未选择书籍'}</span></div><p>{result || '下载内容保存在当前存储后端，导出时按这里的格式和路径生成文件。'}</p></section>;
@@ -358,8 +375,12 @@ function PreviewView({ book, chapters }: { book?: BookInfo; chapters: ChapterRef
 
   async function retranslateCurrentChapter() {
     if (!selectedRef || language === 'original') return;
-    await apiPost('/api/library/chapter-translation/retranslate', { sourceUrl: selectedRef.sourceUrl, targetLanguage: language });
-    setMessage('已提交本章重译任务');
+    try {
+      await apiPost('/api/library/chapter-translation/retranslate', { sourceUrl: selectedRef.sourceUrl, targetLanguage: language });
+      setMessage('已提交本章重译任务');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
   }
 
   return <div className="preview"><section className="panel"><h2>{book?.title ?? '未选择书籍'}</h2><p>{book?.description}</p><div className="meta"><span>{book?.author}</span><span>{book?.category}</span><span>{book?.status}</span></div><div className="readerTools"><label><span>查看语言</span><select value={language} onChange={(event) => setLanguage(event.target.value)}><option value="original">原文</option>{languages.map((item) => <option key={item} value={item}>{item}</option>)}</select></label><button onClick={retranslateCurrentChapter} disabled={!selectedRef || language === 'original'}><RotateCcw size={14} />重新翻译本章</button><span>{message}</span></div></section><section className="panel"><h2>目录</h2><div className="chapterList">{chapters.map((item) => <button key={item.sourceUrl} onClick={() => openChapter(item)}>{item.index}. {item.title}</button>)}</div></section><section className="panel reader"><h2>{chapter?.title ?? '章节预览'}</h2><pre>{chapter?.text ?? '选择已下载章节后显示正文。'}</pre></section></div>;
