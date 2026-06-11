@@ -10,6 +10,7 @@ const chapterChromePatterns = [
   /上一页\s*(?:目錄|目录)\s*下一页/g,
   /上一章|下一章|上一页|下一页|返回目錄|返回目录|全本小說網|全本小说网/g,
 ];
+const chapterTextBlocks = 'p, div, section, article, blockquote, li';
 
 function firstTextAfterLabel(fullText: string, label: string): string | undefined {
   const pattern = new RegExp(`${label}[:：]\\s*([^\\n]+)`);
@@ -87,7 +88,7 @@ export function parseChapter(html: string, bookUrl: string, sourceUrl: string, s
   $('script, style, iframe, ins, .ads, .advert, .nav, .footer').remove();
   const title = normalizeWhitespace($(selectors.chapterTitle).first().text()) || normalizeWhitespace($('title').text()).replace(/_.*$/, '');
   const body = $(selectors.chapterBody).first();
-  const textSource = body.length > 0 ? body.text() : $('body').text();
+  const textSource = extractChapterText($, body.length > 0 ? selectors.chapterBody : 'body');
   const text = cleanChapterText(textSource);
   const match = new URL(sourceUrl).pathname.match(chapterPathPattern);
 
@@ -101,6 +102,21 @@ export function parseChapter(html: string, bookUrl: string, sourceUrl: string, s
     html: body.length > 0 ? body.html() ?? undefined : undefined,
     fetchedAt: nowIso(),
   };
+}
+
+function extractChapterText($: cheerio.CheerioAPI, bodySelector: string): string {
+  const textRoot = $(bodySelector).first().clone();
+  textRoot.find('script, style, iframe, ins, .ads, .advert, .nav, .footer').remove();
+  textRoot.find('br').replaceWith('\n');
+
+  const blockTexts = textRoot
+    .find(chapterTextBlocks)
+    .toArray()
+    .filter((element) => $(element).find(chapterTextBlocks).length === 0)
+    .map((element) => normalizeWhitespace($(element).text()))
+    .filter(Boolean);
+
+  return blockTexts.length > 0 ? blockTexts.join('\n\n') : textRoot.text();
 }
 
 function cleanChapterText(text: string): string {

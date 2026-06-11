@@ -33,6 +33,12 @@ describe('quanben5 catalog parser', () => {
     expect(chapter.text).toBe('正文内容');
   });
 
+  it('preserves paragraph boundaries in simplified chapters', () => {
+    const html = '<h1>第一章 A</h1><div id="content"><div class="chapter"><p>第一段文字。</p><p>第二段文字。<br>第二段下一行。</p></div><div>第三段文字。</div></div>';
+    const chapter = parseChapter(html, 'https://www.quanben5.io/n/book/xiaoshuo.html', 'https://www.quanben5.io/n/book/1.html', QUANBEN5_SIMPLIFIED);
+    expect(chapter.text).toBe('第一段文字。\n\n第二段文字。\n第二段下一行。\n\n第三段文字。');
+  });
+
   it('removes font controls and page navigation from chapters', () => {
     const html = '<h1>第一章 A</h1><div id="content">正文上\n字体:16+-\n上一页\n目录\n下一页\n正文下</div>';
     const chapter = parseChapter(html, 'https://www.quanben5.io/n/book/xiaoshuo.html', 'https://www.quanben5.io/n/book/1.html', QUANBEN5_SIMPLIFIED);
