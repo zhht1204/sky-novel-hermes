@@ -152,8 +152,7 @@ app.post('/api/sites/:siteId/catalog', async (req, res, next) => {
 app.post('/api/import-url', async (req, res, next) => {
   try {
     const url = String(req.body.url ?? '').trim();
-    const siteId = typeof req.body.siteId === 'string' && req.body.siteId ? req.body.siteId : undefined;
-    const site = siteId ? getSite(siteId) : getSiteForUrl(url);
+    const site = getSiteForUrl(url);
     const book = await site.getBookInfo({ url });
     const catalog = await site.getCatalog({ bookUrl: url });
     await db.upsertBook(book);
@@ -456,7 +455,11 @@ server.listen(config.port, config.host, () => {
 });
 
 function getSiteForUrl(url: string) {
-  const site = getSites().find((candidate) => url.startsWith(candidate.baseUrl));
+  const target = new URL(url);
+  const site = getSites().find((candidate) => {
+    const base = new URL(candidate.baseUrl);
+    return target.protocol === base.protocol && target.hostname === base.hostname;
+  });
   if (!site) {
     throw new Error(`No registered site supports URL: ${url}`);
   }
