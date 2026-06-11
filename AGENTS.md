@@ -61,6 +61,14 @@ The adapter extracts metadata, catalog records, and authorized chapter content. 
 - `pnpm test`
 - `pnpm typecheck`
 - `pnpm build`
+- `pnpm --filter @sky-novel-hermes/desktop build:bundle` for installer/release bundle generation
+
+## Release Automation
+
+- GitHub Actions release packaging lives in `.github/workflows/release.yml`.
+- Pushing a tag matching `v*` builds the Windows Tauri bundle on `windows-latest` and uploads generated artifacts from `apps/desktop/src-tauri/target/release/bundle` to the matching GitHub Release.
+- The release workflow can also be run manually with an existing tag through `workflow_dispatch`.
+- Release CI should run `pnpm typecheck`, `pnpm test`, and `pnpm --filter @sky-novel-hermes/desktop build:bundle` before publishing artifacts.
 
 ## Coding Guidelines
 
@@ -72,6 +80,7 @@ The adapter extracts metadata, catalog records, and authorized chapter content. 
 - Keep SQLite available as the default local cache; PostgreSQL can be selected in Settings or configured with `HERMES_STORAGE_BACKEND=postgres` plus `HERMES_DATABASE_URL` or `DATABASE_URL`.
 - Keep crawler logs structured and visible in the Download Manager.
 - Use small, testable parser functions with HTML fixtures.
+- When changing project operations such as build scripts, CI workflows, release automation, supported tooling, or setup commands, update this `AGENTS.md` file and the README when user-facing instructions change.
 
 ## UI Guidelines
 
