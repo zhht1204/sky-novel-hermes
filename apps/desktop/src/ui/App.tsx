@@ -1,4 +1,4 @@
-import { Archive, BookOpen, Download, Eye, Home, Package, Search, Settings, Sparkles } from 'lucide-react';
+import { Archive, BookOpen, Download, Eye, Home, Package, Pause, Play, Search, Settings, Sparkles } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { apiGet, apiPost, serviceWsUrl } from '../api.js';
 import type { AggregatedSearchResponse, BookInfo, ChapterContent, ChapterRef, DownloadFailure, DownloadTask, ExportResponse, ServiceSettings, SiteSearchResultGroup, SiteSummary, UrlImportResponse } from '../types.js';
@@ -181,7 +181,17 @@ function DownloadsView({ tasks, refresh }: { tasks: DownloadTask[]; refresh: () 
     await refresh();
   }
 
-  return <section className="panel"><h2>下载队列</h2><table><thead><tr><th>状态</th><th>进度</th><th>失败</th><th>消息</th><th>操作</th></tr></thead><tbody>{tasks.map((task) => <tr key={task.id}><td><span className={`badge ${task.status}`}>{task.status}</span></td><td>{task.completedChapters}/{task.totalChapters}</td><td>{task.failedChapters}</td><td>{task.message}</td><td><div className="tableActions"><button onClick={() => toggleFailures(task)} disabled={task.failedChapters === 0}>失败明细</button><button onClick={() => retryFailed(task)} disabled={task.failedChapters === 0 || task.status === 'running'}>重试失败</button></div></td></tr>)}</tbody></table>{openTaskId && <FailureList failures={failures[openTaskId] ?? []} />}</section>;
+  async function resumeTask(task: DownloadTask) {
+    await apiPost(`/api/downloads/${task.id}/resume`, {});
+    await refresh();
+  }
+
+  async function pauseTask(task: DownloadTask) {
+    await apiPost(`/api/downloads/${task.id}/pause`, {});
+    await refresh();
+  }
+
+  return <section className="panel"><h2>下载队列</h2><table><thead><tr><th>状态</th><th>进度</th><th>失败</th><th>消息</th><th>操作</th></tr></thead><tbody>{tasks.map((task) => <tr key={task.id}><td><span className={`badge ${task.status}`}>{task.status}</span></td><td>{task.completedChapters}/{task.totalChapters}</td><td>{task.failedChapters}</td><td>{task.message}</td><td><div className="tableActions"><button onClick={() => pauseTask(task)} disabled={!['queued', 'running'].includes(task.status)} title="暂停任务"><Pause size={14} />暂停</button><button onClick={() => resumeTask(task)} disabled={task.status === 'running' || task.status === 'completed'} title="继续缺失章节"><Play size={14} />继续</button><button onClick={() => toggleFailures(task)} disabled={task.failedChapters === 0}>失败明细</button><button onClick={() => retryFailed(task)} disabled={task.failedChapters === 0 || task.status === 'running'}>重试失败</button></div></td></tr>)}</tbody></table>{openTaskId && <FailureList failures={failures[openTaskId] ?? []} />}</section>;
 }
 
 function FailureList({ failures }: { failures: DownloadFailure[] }) {

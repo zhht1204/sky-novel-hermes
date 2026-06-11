@@ -13,7 +13,7 @@ import { SAMPLE_BOOK_URL } from '@sky-novel-hermes/shared';
 import { getSite, getSites } from '@sky-novel-hermes/sites';
 import { HermesDatabase } from '@sky-novel-hermes/storage';
 import { loadConfig, saveSettings, type AppSettings } from './config.js';
-import { DownloadManager } from './downloadManager.js';
+import { ActiveTaskError, DownloadManager } from './downloadManager.js';
 
 const startedAt = new Date().toISOString();
 const config = loadConfig();
@@ -207,6 +207,22 @@ app.post('/api/downloads/:taskId/retry-failed', async (req, res, next) => {
   }
 });
 
+app.post('/api/downloads/:taskId/pause', async (req, res, next) => {
+  try {
+    res.json(await downloads.pauseTask(req.params.taskId));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.post('/api/downloads/:taskId/resume', async (req, res, next) => {
+  try {
+    res.status(202).json(await downloads.resumeTask(req.params.taskId));
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.get('/api/library/books', async (_req, res, next) => {
   try {
     res.json(await db.listBooks());
@@ -277,7 +293,7 @@ app.post('/api/export', async (req, res, next) => {
 app.use((error: unknown, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   const message = error instanceof Error ? error.message : String(error);
   logger.error({ error }, message);
-  res.status(500).json({ error: message });
+  res.status(error instanceof ActiveTaskError ? 409 : 500).json({ error: message });
 });
 
 const server = createServer(app);
