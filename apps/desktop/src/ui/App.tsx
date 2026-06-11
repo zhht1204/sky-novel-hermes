@@ -24,10 +24,9 @@ export function App() {
   const [translationTasks, setTranslationTasks] = useState<TranslationTask[]>([]);
   const [chapters, setChapters] = useState<ChapterRef[]>([]);
   const [selectedBookUrl, setSelectedBookUrl] = useState('');
-  const [message, setMessage] = useState('准备就绪');
+  const [message, setMessage] = useState('');
 
   async function refresh() {
-    setMessage(`正在连接 ${serviceUrl()}`);
     const [siteList, taskList, translationTaskList, bookList] = await Promise.all([
       apiGet<SiteSummary[]>('/api/sites'),
       apiGet<DownloadTask[]>('/api/downloads'),
@@ -38,7 +37,7 @@ export function App() {
     setTasks(taskList);
     setTranslationTasks(translationTaskList);
     setBooks(bookList);
-    setMessage(`已连接 ${serviceUrl()}`);
+    setMessage('');
   }
 
   async function refreshWithMessage() {
@@ -79,8 +78,8 @@ export function App() {
     const result = await apiPost<UrlImportResponse>('/api/import-url', { url });
     setSelectedBookUrl(result.book.canonicalUrl);
     setChapters(result.catalog);
-    setMessage(`已导入《${result.book.title}》目录 ${result.catalogCount} 章`);
     await refresh();
+    setMessage(`已导入《${result.book.title}》目录 ${result.catalogCount} 章`);
     return result;
   }
 
@@ -95,9 +94,9 @@ export function App() {
       setMessage('未找到匹配此 URL domain 的站点');
       return;
     }
-    setMessage('下载任务已提交');
     await apiPost('/api/downloads', { siteId, bookUrl });
     await refresh();
+    setMessage('下载任务已提交');
   }
 
   return (
@@ -115,7 +114,7 @@ export function App() {
         <header className="topbar">
           <div>
             <strong>{nav.find((item) => item.id === active)?.label}</strong>
-            <span>{message}</span>
+            {message && <span>{message}</span>}
           </div>
           <button className="primary" onClick={refreshWithMessage}>刷新</button>
         </header>
