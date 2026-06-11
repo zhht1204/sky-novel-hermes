@@ -78,3 +78,16 @@ The `quanben5-big5` adapter extracts book metadata, catalog entries, and authori
 
 Run `pnpm build` before using package-level `start` scripts that expect generated `dist/` output.
 The default desktop build skips Windows installer bundling so local verification does not depend on downloading WiX/NSIS. Use `pnpm --filter @sky-novel-hermes/desktop build:bundle` when you explicitly need an installer.
+
+## Release Packaging
+
+GitHub Actions builds Windows release packages automatically when a tag starting with `v` is pushed:
+
+```powershell
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The release workflow installs Node.js 22, pnpm, and stable Rust, then runs `pnpm typecheck`, `pnpm test`, and `pnpm --filter @sky-novel-hermes/desktop build:bundle` on `windows-latest`. The generated Tauri installers from `apps/desktop/src-tauri/target/release/bundle` are uploaded to the matching GitHub Release.
+
+You can also run the same workflow manually from the GitHub Actions page by choosing the `Release` workflow and entering an existing tag such as `v0.1.0`.

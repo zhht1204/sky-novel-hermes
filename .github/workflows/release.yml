@@ -1,0 +1,79 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to publish, for example v0.1.0"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build-windows:
+    name: Build Windows release
+    runs-on: windows-latest
+
+    steps:
+      - name: Resolve release tag
+        id: release
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            "tag=${{ inputs.tag }}" >> $env:GITHUB_OUTPUT
+          } else {
+            "tag=${{ github.ref_name }}" >> $env:GITHUB_OUTPUT
+          }
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.release.outputs.tag }}
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: apps/desktop/src-tauri -> target
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build Tauri bundle
+        run: pnpm --filter @sky-novel-hermes/desktop build:bundle
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release.outputs.tag }}
+          name: Sky Novel Hermes ${{ steps.release.outputs.tag }}
+          generate_release_notes: true
+          prerelease: ${{ contains(steps.release.outputs.tag, '-') }}
+          files: apps/desktop/src-tauri/target/release/bundle/**/*
+          fail_on_unmatched_files: true
