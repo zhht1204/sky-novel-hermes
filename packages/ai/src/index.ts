@@ -1,10 +1,12 @@
-import type { AnalysisResult, LanguageProfile } from '@sky-novel-hermes/shared';
+import process from 'node:process';
+import type { AiOperation, AiUsageRecord, AnalysisResult, LanguageProfile } from '@sky-novel-hermes/shared';
 import { nowIso } from '@sky-novel-hermes/shared';
 
 export interface LiteLlmConfig {
   baseUrl: string;
   apiKey?: string;
   model: string;
+  onUsage?: (record: AiUsageRecord) => void | Promise<void>;
 }
 
 export class LiteLlmClient {
@@ -23,32 +25,15 @@ export class LiteLlmClient {
       throw new Error('LiteLLM is not configured. Set LITELLM_BASE_URL and LITELLM_MODEL.');
     }
 
-    const response = await fetch(chatCompletionsUrl(this.config.baseUrl), {
-      method: 'POST',
-      headers: {
-        'content-type': 'application/json',
-        ...(this.config.apiKey ? { authorization: `Bearer ${this.config.apiKey}` } : {}),
-      },
-      body: JSON.stringify({
-        model: this.config.model,
-        messages: [
-          { role: 'system', content: 'You analyze Chinese web novel text and return concise structured summaries.' },
-          { role: 'user', content: `Summarize this content in Chinese in 5-8 bullet points:\n\n${text.slice(0, 12000)}` },
-        ],
-        temperature: 0.2,
-      }),
-    });
-
-    if (!response.ok) {
-      throw new Error(`LiteLLM request failed: ${response.status} ${await readResponseMessage(response)}`);
-    }
-
-    const json = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
+    const json = await this.chatCompletion([
+      { role: 'system', content: 'You analyze Chinese web novel text and return concise structured summaries.' },
+      { role: 'user', content: `Summarize this content in Chinese in 5-8 bullet points:\n\n${text.slice(0, 12000)}` },
+    ], 0.2, { operation: 'summary', sourceId });
     return {
       kind: 'book-summary',
       sourceId,
       model: this.config.model,
-      summary: json.choices?.[0]?.message?.content?.trim() ?? '',
+      summary: extractAssistantText(json),
       data: {},
       createdAt: nowIso(),
     };
@@ -70,7 +55,7 @@ export class LiteLlmClient {
     const response = await this.chat([
       { role: 'system', content: 'Detect the primary language of novel text. Return only compact JSON with keys language and confidence. Use short language names or BCP-47 codes.' },
       { role: 'user', content: text.slice(0, 8000) },
-    ], 0);
+    ], 0, { operation: 'language-detection', sourceId: bookUrl });
     const parsed = parseLanguageDetection(response);
     return {
       bookUrl,
@@ -89,6 +74,8 @@ export class LiteLlmClient {
     targetLanguage: string;
     prompt: string;
     maxChunkChars: number;
+    taskId?: string;
+    sourceId?: string;
   }): Promise<string> {
     if (!this.enabled) {
       throw new Error('LiteLLM is not configured. Set LITELLM_BASE_URL and LITELLM_MODEL.');
@@ -99,12 +86,17 @@ export class LiteLlmClient {
       translated.push(await this.chat([
         { role: 'system', content: renderPrompt(input.prompt, input, chunk) },
         { role: 'user', content: chunk },
-      ], 0.2));
+      ], 0.2, { operation: 'translation', taskId: input.taskId, sourceId: input.sourceId }));
     }
     return translated.map((item) => item.trim()).filter(Boolean).join('\n\n');
   }
 
-  private async chat(messages: Array<{ role: 'system' | 'user'; content: string }>, temperature: number): Promise<string> {
+  private async chat(messages: Array<{ role: 'system' | 'user'; content: string }>, temperature: number, metadata: ChatMetadata): Promise<string> {
+    const json = await this.chatCompletion(messages, temperature, metadata);
+    return extractAssistantText(json);
+  }
+
+  private async chatCompletion(messages: Array<{ role: 'system' | 'user'; content: string }>, temperature: number, metadata: ChatMetadata): Promise<ChatCompletionResponse> {
     if (!this.enabled) {
       throw new Error('LiteLLM is not configured. Set LITELLM_BASE_URL and LITELLM_MODEL.');
     }
@@ -119,23 +111,40 @@ export class LiteLlmClient {
     if (!response.ok) {
       throw new Error(`LiteLLM request failed: ${response.status} ${await readResponseMessage(response)}`);
     }
-    const json = await response.json() as { choices?: Array<{ message?: { content?: string } }> };
-    return json.choices?.[0]?.message?.content?.trim() ?? '';
+    const json = await response.json() as ChatCompletionResponse;
+    void this.recordUsage(metadata, json.usage);
+    return json;
+  }
+
+  private async recordUsage(metadata: ChatMetadata, usage: ChatUsage | undefined): Promise<void> {
+    if (!this.config.onUsage) return;
+    await this.config.onUsage({
+      operation: metadata.operation,
+      taskId: metadata.taskId,
+      sourceId: metadata.sourceId,
+      model: this.config.model,
+      promptTokens: usage?.prompt_tokens,
+      completionTokens: usage?.completion_tokens,
+      totalTokens: usage?.total_tokens,
+      createdAt: nowIso(),
+    });
   }
 }
 
 export const DEFAULT_TRANSLATION_PROMPT = [
   'Translate the chapter from {sourceLanguage} to {targetLanguage}.',
   'Return only the translated novel text. Do not add explanations, notes, markdown fences, or summaries.',
+  'Do not include hidden reasoning, chain-of-thought, analysis, <think> blocks, or draft notes.',
   'Preserve paragraph breaks, dialogue markers, names, numbers, and chapter tone.',
   'Chapter title: {title}',
 ].join('\n');
 
-export function createLiteLlmClientFromEnv(): LiteLlmClient {
+export function createLiteLlmClientFromEnv(onUsage?: (record: AiUsageRecord) => void | Promise<void>): LiteLlmClient {
   return new LiteLlmClient({
     baseUrl: process.env.LITELLM_BASE_URL ?? '',
     apiKey: process.env.LITELLM_API_KEY,
     model: process.env.LITELLM_MODEL ?? 'gpt-4o-mini',
+    onUsage,
   });
 }
 
@@ -167,6 +176,35 @@ function chatCompletionsUrl(baseUrl: string): string {
   const trimmed = baseUrl.trim();
   if (/\/chat\/completions\/?$/i.test(trimmed)) return trimmed;
   return new URL('chat/completions', trimmed.endsWith('/') ? trimmed : `${trimmed}/`).toString();
+}
+
+interface ChatMetadata {
+  operation: AiOperation;
+  taskId?: string;
+  sourceId?: string;
+}
+
+interface ChatUsage {
+  prompt_tokens?: number;
+  completion_tokens?: number;
+  total_tokens?: number;
+}
+
+interface ChatCompletionResponse {
+  choices?: Array<{ message?: { content?: string; reasoning_content?: string } }>;
+  usage?: ChatUsage;
+}
+
+function extractAssistantText(json: ChatCompletionResponse): string {
+  return stripReasoningText(json.choices?.[0]?.message?.content ?? '');
+}
+
+function stripReasoningText(content: string): string {
+  return content
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<reasoning>[\s\S]*?<\/reasoning>/gi, '')
+    .replace(/^\s*(?:思维链|推理过程|reasoning|analysis)\s*[:：][\s\S]*?(?:\n\s*\n|$)/i, '')
+    .trim();
 }
 
 async function readResponseMessage(response: Response): Promise<string> {

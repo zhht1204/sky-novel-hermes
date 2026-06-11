@@ -159,3 +159,31 @@ export interface TranslationFailure {
   error: string;
   lastFailedAt: string;
 }
+
+export interface AiUsageRecord {
+  id?: number;
+  operation: 'summary' | 'language-detection' | 'translation';
+  taskId?: string;
+  sourceId?: string;
+  model: string;
+  promptTokens?: number;
+  completionTokens?: number;
+  totalTokens?: number;
+  createdAt: string;
+}
+
+export interface AiUsageSummary {
+  totals: {
+    requests: number;
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  };
+  byTask: Array<{
+    taskId: string;
+    requests: number;
+    promptTokens: number;
+    completionTokens: number;
+    totalTokens: number;
+  }>;
+}

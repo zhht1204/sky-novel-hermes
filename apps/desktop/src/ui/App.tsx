@@ -1,7 +1,7 @@
-import { Archive, BookOpen, Download, Eye, Home, Languages, Package, Pause, Play, RotateCcw, Search, Settings, Sparkles, X } from 'lucide-react';
+import { Archive, BookOpen, BrainCircuit, Download, Eye, Home, Languages, Package, Pause, Play, RotateCcw, Search, Settings, Sparkles, X } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { apiGet, apiPost, serviceWsUrl } from '../api.js';
-import type { AggregatedSearchResponse, BookInfo, ChapterContent, ChapterRef, ChapterTranslation, DownloadFailure, DownloadTask, ExportResponse, LanguageProfile, ServiceSettings, SiteSearchResultGroup, SiteSummary, TranslationFailure, TranslationTask, UrlImportResponse } from '../types.js';
+import type { AggregatedSearchResponse, AiUsageRecord, AiUsageSummary, BookInfo, ChapterContent, ChapterRef, ChapterTranslation, DownloadFailure, DownloadTask, ExportResponse, LanguageProfile, ServiceSettings, SiteSearchResultGroup, SiteSummary, TranslationFailure, TranslationTask, UrlImportResponse } from '../types.js';
 
 const sampleUrl = 'https://big5.quanben5.io/n/moshi_wodunliaoyiwanwuzi/xiaoshuo.html';
 const nav = [
@@ -12,6 +12,7 @@ const nav = [
   { id: 'library', label: '已下载内容', icon: Archive },
   { id: 'package', label: '打包压缩', icon: Package },
   { id: 'preview', label: '预览', icon: Eye },
+  { id: 'ai', label: 'AI 配置', icon: BrainCircuit },
   { id: 'settings', label: '设置', icon: Settings },
 ];
 
@@ -112,6 +113,7 @@ export function App() {
         {active === 'library' && <LibraryView books={books} setSelectedBookUrl={setSelectedBookUrl} setActive={setActive} />}
         {active === 'package' && <PackageView books={books} selectedBookUrl={selectedBookUrl} setSelectedBookUrl={setSelectedBookUrl} />}
         {active === 'preview' && <PreviewView book={selectedBook} chapters={chapters} />}
+        {active === 'ai' && <AiUsageView />}
         {active === 'settings' && <SettingsView />}
       </section>
     </main>
@@ -384,6 +386,43 @@ function PreviewView({ book, chapters }: { book?: BookInfo; chapters: ChapterRef
   }
 
   return <div className="preview"><section className="panel"><h2>{book?.title ?? '未选择书籍'}</h2><p>{book?.description}</p><div className="meta"><span>{book?.author}</span><span>{book?.category}</span><span>{book?.status}</span></div><div className="readerTools"><label><span>查看语言</span><select value={language} onChange={(event) => setLanguage(event.target.value)}><option value="original">原文</option>{languages.map((item) => <option key={item} value={item}>{item}</option>)}</select></label><button onClick={retranslateCurrentChapter} disabled={!selectedRef || language === 'original'}><RotateCcw size={14} />重新翻译本章</button><span>{message}</span></div></section><section className="panel"><h2>目录</h2><div className="chapterList">{chapters.map((item) => <button key={item.sourceUrl} onClick={() => openChapter(item)}>{item.index}. {item.title}</button>)}</div></section><section className="panel reader"><h2>{chapter?.title ?? '章节预览'}</h2><pre>{chapter?.text ?? '选择已下载章节后显示正文。'}</pre></section></div>;
+}
+
+function AiUsageView() {
+  const [settings, setSettings] = useState<ServiceSettings | undefined>();
+  const [summary, setSummary] = useState<AiUsageSummary | undefined>();
+  const [records, setRecords] = useState<AiUsageRecord[]>([]);
+  const [message, setMessage] = useState('正在读取 AI 使用量');
+
+  async function refreshUsage() {
+    try {
+      const [nextSettings, nextSummary, nextRecords] = await Promise.all([
+        apiGet<ServiceSettings>('/api/settings'),
+        apiGet<AiUsageSummary>('/api/ai/usage/summary'),
+        apiGet<AiUsageRecord[]>('/api/ai/usage?limit=200'),
+      ]);
+      setSettings(nextSettings);
+      setSummary(nextSummary);
+      setRecords(nextRecords);
+      setMessage('AI 请求使用量按服务端返回的 usage 字段统计；供应商不返回时显示为 -。');
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  useEffect(() => {
+    refreshUsage();
+  }, []);
+
+  return <div className="stack"><section className="panel"><h2>AI 配置与使用量</h2><div className="grid usageGrid"><Metric label="请求" value={summary?.totals.requests ?? 0} /><Metric label="Prompt Tokens" value={summary?.totals.promptTokens ?? 0} /><Metric label="Completion Tokens" value={summary?.totals.completionTokens ?? 0} /><Metric label="Total Tokens" value={summary?.totals.totalTokens ?? 0} /></div><div className="formRow"><button className="primary" onClick={refreshUsage}>刷新使用量</button><span>{settings ? `默认翻译目标：${settings.translation.defaultTargetLanguage}` : '正在读取设置'}</span></div><p>{message}</p><p>周期剩余额度需要供应商提供配额 API；当前 OpenAI-compatible chat response 通常只返回本次 token usage，因此这里统计本地已记录请求。</p></section><section className="panel"><h2>按任务统计</h2><table><thead><tr><th>任务</th><th>请求</th><th>Prompt</th><th>Completion</th><th>Total</th></tr></thead><tbody>{summary?.byTask.map((task) => <tr key={task.taskId}><td>{shortId(task.taskId)}</td><td>{task.requests}</td><td>{task.promptTokens}</td><td>{task.completionTokens}</td><td>{task.totalTokens}</td></tr>)}</tbody></table>{summary && summary.byTask.length === 0 && <p>还没有可按任务归属的 AI 请求。</p>}</section><section className="panel"><h2>最近请求</h2><table><thead><tr><th>时间</th><th>操作</th><th>模型</th><th>任务</th><th>Prompt</th><th>Completion</th><th>Total</th></tr></thead><tbody>{records.map((record) => <tr key={record.id ?? `${record.createdAt}:${record.sourceId}`}><td>{new Date(record.createdAt).toLocaleString()}</td><td>{record.operation}</td><td>{record.model}</td><td>{record.taskId ? shortId(record.taskId) : '-'}</td><td>{formatToken(record.promptTokens)}</td><td>{formatToken(record.completionTokens)}</td><td>{formatToken(record.totalTokens)}</td></tr>)}</tbody></table>{records.length === 0 && <p>还没有 AI 请求记录。</p>}</section></div>;
+}
+
+function formatToken(value: number | undefined): string {
+  return value === undefined ? '-' : String(value);
+}
+
+function shortId(value: string): string {
+  return value.length > 12 ? `${value.slice(0, 8)}...` : value;
 }
 
 function SettingsView() {

@@ -55,6 +55,8 @@ Values already present in the shell environment take precedence over `.env`. Fro
 
 Language detection runs after downloads complete and can also be triggered manually from the Multilingual Processing page. Translation does not fetch new source content; it only processes chapters already downloaded into the local library. The default translation prompt is editable from Settings and is stored in the local settings file alongside retry and chunk-size preferences.
 
+The AI Configuration page shows locally recorded usage for each AI request, plus aggregate totals and per-task totals when the provider returns OpenAI-compatible `usage` fields. Provider account cycle balance or remaining quota is not calculated unless the upstream service exposes that information through a compatible API.
+
 ## First Sample
 
 The initial sample source is:

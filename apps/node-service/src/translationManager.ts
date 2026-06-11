@@ -195,6 +195,8 @@ export class TranslationManager extends EventEmitter {
           targetLanguage: task.targetLanguage,
           prompt: settings.defaultPrompt,
           maxChunkChars: settings.maxChunkChars,
+          taskId: task.id,
+          sourceId: chapter.sourceUrl,
         });
       } catch (error) {
         lastError = error;

@@ -206,6 +206,23 @@ export const TranslationSettingsSchema = z.object({
 
 export type TranslationSettings = z.infer<typeof TranslationSettingsSchema>;
 
+export const AiOperationSchema = z.enum(['summary', 'language-detection', 'translation']);
+export type AiOperation = z.infer<typeof AiOperationSchema>;
+
+export const AiUsageRecordSchema = z.object({
+  id: z.number().int().positive().optional(),
+  operation: AiOperationSchema,
+  taskId: z.string().optional(),
+  sourceId: z.string().optional(),
+  model: z.string(),
+  promptTokens: z.number().int().nonnegative().optional(),
+  completionTokens: z.number().int().nonnegative().optional(),
+  totalTokens: z.number().int().nonnegative().optional(),
+  createdAt: z.string(),
+});
+
+export type AiUsageRecord = z.infer<typeof AiUsageRecordSchema>;
+
 export const AnalysisKindSchema = z.enum(['metadata', 'chapter-summary', 'book-summary', 'quality-check']);
 export type AnalysisKind = z.infer<typeof AnalysisKindSchema>;
 

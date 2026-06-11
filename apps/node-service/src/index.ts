@@ -8,7 +8,7 @@ import pinoHttp from 'pino-http';
 import { WebSocketServer } from 'ws';
 import { createLiteLlmClientFromEnv } from '@sky-novel-hermes/ai';
 import { safeFileName, toMarkdown, toPlainText, toZip } from '@sky-novel-hermes/exporter';
-import type { ChapterContent } from '@sky-novel-hermes/shared';
+import type { AiUsageRecord, ChapterContent } from '@sky-novel-hermes/shared';
 import { SAMPLE_BOOK_URL } from '@sky-novel-hermes/shared';
 import { getSite, getSites } from '@sky-novel-hermes/sites';
 import { HermesDatabase } from '@sky-novel-hermes/storage';
@@ -21,7 +21,7 @@ const config = loadConfig();
 const logger = pino({ level: process.env.LOG_LEVEL ?? 'info' });
 let settings: AppSettings = { storage: config.storage, exportDir: config.exportDir, autoRetryAttempts: config.autoRetryAttempts, translation: config.translation };
 let db = await HermesDatabase.connect(settings.storage);
-const ai = createLiteLlmClientFromEnv();
+const ai = createLiteLlmClientFromEnv((record) => db.insertAiUsage(record).catch((error) => logger.warn({ error }, 'Failed to record AI usage')));
 const downloads = new DownloadManager(db, getSite, settings.autoRetryAttempts);
 const translations = new TranslationManager(db, ai, () => settings.translation);
 
@@ -389,6 +389,23 @@ app.post('/api/analysis/summary', async (req, res, next) => {
   }
 });
 
+app.get('/api/ai/usage', async (req, res, next) => {
+  try {
+    res.json(await db.listAiUsage(Number(req.query.limit ?? 200)));
+  } catch (error) {
+    next(error);
+  }
+});
+
+app.get('/api/ai/usage/summary', async (_req, res, next) => {
+  try {
+    const records = await db.listAiUsage(5000);
+    res.json(summarizeAiUsage(records));
+  } catch (error) {
+    next(error);
+  }
+});
+
 app.post('/api/export', async (req, res, next) => {
   try {
     const bookUrl = String(req.body.bookUrl);
@@ -509,4 +526,22 @@ async function getTranslatedChapters(chapterRefs: Array<{ sourceUrl: string; boo
     throw new Error(`Missing ${missing.length} translated chapters for ${language}`);
   }
   return chapters;
+}
+
+function summarizeAiUsage(records: AiUsageRecord[]) {
+  const totals = { requests: records.length, promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+  const byTask = new Map<string, { taskId: string; requests: number; promptTokens: number; completionTokens: number; totalTokens: number }>();
+  for (const record of records) {
+    totals.promptTokens += record.promptTokens ?? 0;
+    totals.completionTokens += record.completionTokens ?? 0;
+    totals.totalTokens += record.totalTokens ?? 0;
+    if (!record.taskId) continue;
+    const current = byTask.get(record.taskId) ?? { taskId: record.taskId, requests: 0, promptTokens: 0, completionTokens: 0, totalTokens: 0 };
+    current.requests += 1;
+    current.promptTokens += record.promptTokens ?? 0;
+    current.completionTokens += record.completionTokens ?? 0;
+    current.totalTokens += record.totalTokens ?? 0;
+    byTask.set(record.taskId, current);
+  }
+  return { totals, byTask: [...byTask.values()].sort((left, right) => right.totalTokens - left.totalTokens) };
 }
