@@ -21,6 +21,7 @@ The desktop shell uses Tauri. Crawling, download queues, storage orchestration, 
 - Respect robots.txt, rate limits, retry budgets, and source attribution.
 - Do not hard-code credentials, API keys, cookies, or proxy credentials.
 - Keep downloads local and user-initiated.
+- Treat direct source-site domains and sample work URLs as sensitive in user-facing documentation. Do not publish specific source-site domains or sample catalog URLs in README, release notes, screenshots, or marketing/user docs unless the user explicitly requests it. Internal agent/developer docs may retain minimal adapter/domain details needed for maintenance.
 
 ## Architecture
 
@@ -50,9 +51,8 @@ The Quanben5 site adapters are:
 
 - `quanben5-big5`, targeting `https://big5.quanben5.io`
 - `quanben5-simplified`, targeting `https://www.quanben5.io`
-- Sample catalog URL: `https://big5.quanben5.io/n/moshi_wodunliaoyiwanwuzi/xiaoshuo.html`
 
-Both adapters share the `packages/sites/src/quanben5` module and extract metadata, catalog records, and authorized chapter content. Keep all selectors isolated in the site module.
+Both adapters share the `packages/sites/src/quanben5` module and extract metadata, catalog records, and authorized chapter content from user-provided URLs. Keep all selectors isolated in the site module. Do not add sample work URLs here.
 
 ## Development Commands
 
