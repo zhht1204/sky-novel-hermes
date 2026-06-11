@@ -13,6 +13,7 @@ The desktop shell uses Tauri. Crawling, download queues, storage orchestration, 
 - Site adapters must provide connection checks, search, book info extraction, catalog extraction, and chapter content extraction.
 - LiteLLM or another OpenAI-compatible provider is used through an external API endpoint.
 - The app includes Home, Search, Download Manager, Downloaded Library, Packaging, Preview, and Settings views.
+- Preview is the local reader for downloaded content. It should be reachable from library/export workflows, read stored chapter text from the active storage backend, support available translations, original/translation compare, and current-chapter retranslation.
 - UI should be concise, tool-oriented, information-dense, and visually polished.
 
 ## Compliance Rules
@@ -80,8 +81,9 @@ Both adapters share the `packages/sites/src/quanben5` module and extract metadat
 - Store LiteLLM configuration in environment variables or local app settings.
 - Keep SQLite available as the default local cache; PostgreSQL can be selected in Settings or configured with `HERMES_STORAGE_BACKEND=postgres` plus `HERMES_DATABASE_URL` or `DATABASE_URL`.
 - Keep crawler logs structured and visible in the Download Manager.
+- Keep Preview behavior documented in the README when reader, translation preview, compare, or retranslation workflows change.
 - Use small, testable parser functions with HTML fixtures.
-- When changing project operations such as build scripts, CI workflows, release automation, supported tooling, or setup commands, update this `AGENTS.md` file and the README when user-facing instructions change.
+- When changing important app features, user-facing workflows, project operations, build scripts, CI workflows, release automation, supported tooling, or setup commands, update this `AGENTS.md` file with the new maintenance expectations and update the README when user-facing behavior or instructions change.
 
 ## UI Guidelines
 
