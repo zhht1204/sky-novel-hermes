@@ -4,6 +4,12 @@ Sky Novel Hermes is a Tauri desktop app for lawful novel download management, lo
 
 The GUI is built with Tauri, Vite, React, and TypeScript. Crawling, queueing, storage, exports, and AI analysis run in a Node.js v22 local service. Source adapters are registered in the application code and operate on user-provided URLs.
 
+## License and Responsible Use
+
+Sky Novel Hermes is licensed under [CC BY-NC-SA 4.0](LICENSE). You may fork, modify, and redistribute this repository for non-commercial purposes only. Forks, modified versions, and derivative repositories must clearly state that they are based on the original Sky Novel Hermes repository, preserve attribution, identify meaningful changes, and use the same license terms.
+
+This project is provided only as a personal-use tool for lawful download management and local library organization. It does not grant rights to third-party content, does not guarantee the copyright status, legality, accuracy, availability, or quality of any downloaded content or metadata, and must not be used for infringement or any other unlawful purpose. See [NOTICE.md](NOTICE.md) for the full responsible-use notice.
+
 ## Requirements
 
 - Node.js 22+

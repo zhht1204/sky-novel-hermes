@@ -22,6 +22,8 @@ The desktop shell uses Tauri. Crawling, download queues, storage orchestration, 
 - Respect robots.txt, rate limits, retry budgets, and source attribution.
 - Do not hard-code credentials, API keys, cookies, or proxy credentials.
 - Keep downloads local and user-initiated.
+- Preserve the CC BY-NC-SA 4.0 licensing stance: forks, modified versions, and derivative repositories must attribute the original Sky Novel Hermes repository, identify meaningful changes, remain non-commercial, and use the same license terms.
+- Keep `LICENSE`, `NOTICE.md`, README license text, and package `license` metadata aligned when license or responsible-use terms change.
 - Treat direct source-site domains and sample work URLs as sensitive in user-facing documentation. Do not publish specific source-site domains or sample catalog URLs in README, release notes, screenshots, or marketing/user docs unless the user explicitly requests it. Internal agent/developer docs may retain minimal adapter/domain details needed for maintenance.
 
 ## Architecture
