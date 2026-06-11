@@ -4,6 +4,16 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Sky Novel Hermes</title>
+    <script>
+      (function () {
+        try {
+          var stored = localStorage.getItem('hermes-theme');
+          document.documentElement.dataset.theme = stored === 'light' ? 'light' : 'dark';
+        } catch (error) {
+          document.documentElement.dataset.theme = 'dark';
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

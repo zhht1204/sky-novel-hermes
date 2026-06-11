@@ -1,0 +1,158 @@
+/*
+ * Sky Novel Hermes — design tokens.
+ * Single source of truth for the UI theme. See docs/THEME.md for usage rules.
+ * Components and styles.css MUST consume these variables; do not hard-code colors.
+ */
+
+:root {
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 7px;
+  --radius-lg: 11px;
+  --radius-pill: 999px;
+
+  /* Spacing scale */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 22px;
+  --space-6: 32px;
+
+  /* Typography */
+  --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", "Cascadia Code", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --fs-xs: 12px;
+  --fs-sm: 13px;
+  --fs-md: 14px;
+  --fs-lg: 16px;
+  --fs-xl: 18px;
+  --fs-2xl: 24px;
+  --fs-3xl: 30px;
+
+  /* Motion */
+  --dur-fast: 120ms;
+  --dur-med: 200ms;
+  --dur-slow: 320ms;
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* Layering */
+  --z-sticky: 50;
+  --z-toast: 1000;
+}
+
+/* ---------- Dark theme (default) ---------- */
+:root,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+
+  --bg-app: #0e1116;
+  --bg-sunken: #0a0d12;
+  --bg-panel: #161b22;
+  --bg-raised: #1c232c;
+  --bg-hover: #222b35;
+  --bg-active: #2a3441;
+
+  --border: #2a323c;
+  --border-strong: #3a444f;
+
+  --text-primary: #e6edf3;
+  --text-secondary: #9da7b3;
+  --text-muted: #6b7682;
+  --text-inverse: #0e1116;
+
+  --accent: #2f9bbd;
+  --accent-hover: #3cb2d8;
+  --accent-active: #2789a8;
+  --accent-soft: rgba(47, 155, 189, 0.14);
+  --accent-contrast: #ffffff;
+
+  --focus-ring: rgba(60, 178, 216, 0.55);
+
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.45);
+  --shadow-pop: 0 12px 34px rgba(0, 0, 0, 0.55);
+
+  --status-queued-bg: rgba(148, 163, 184, 0.18);
+  --status-queued-fg: #c2ccd8;
+  --status-running-bg: rgba(47, 155, 189, 0.18);
+  --status-running-fg: #5fc6e6;
+  --status-paused-bg: rgba(214, 158, 46, 0.18);
+  --status-paused-fg: #e7b75a;
+  --status-completed-bg: rgba(46, 160, 87, 0.18);
+  --status-completed-fg: #5fd38a;
+  --status-failed-bg: rgba(218, 76, 76, 0.18);
+  --status-failed-fg: #f08a8a;
+  --status-cancelled-bg: rgba(110, 118, 130, 0.16);
+  --status-cancelled-fg: #9aa3ad;
+
+  --danger: #e5534b;
+  --danger-hover: #f06a62;
+  --danger-soft: rgba(229, 83, 75, 0.15);
+
+  --warn-bg: #2b2417;
+  --warn-border: #5c4a23;
+  --warn-fg: #e7b75a;
+
+  --highlight-flash: rgba(60, 178, 216, 0.26);
+  --skeleton-base: #1c232c;
+  --skeleton-sheen: #2a333e;
+}
+
+/* ---------- Light theme ---------- */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg-app: #eef2f5;
+  --bg-sunken: #e4e9ee;
+  --bg-panel: #ffffff;
+  --bg-raised: #f6f8fa;
+  --bg-hover: #f0f3f6;
+  --bg-active: #e6ebf0;
+
+  --border: #d8e0e7;
+  --border-strong: #c2ccd6;
+
+  --text-primary: #1d252c;
+  --text-secondary: #52616f;
+  --text-muted: #788692;
+  --text-inverse: #ffffff;
+
+  --accent: #176b87;
+  --accent-hover: #1a7c9c;
+  --accent-active: #135a72;
+  --accent-soft: rgba(23, 107, 135, 0.1);
+  --accent-contrast: #ffffff;
+
+  --focus-ring: rgba(23, 107, 135, 0.35);
+
+  --shadow-sm: 0 1px 2px rgba(20, 40, 60, 0.08);
+  --shadow-md: 0 4px 14px rgba(20, 40, 60, 0.1);
+  --shadow-pop: 0 10px 30px rgba(20, 40, 60, 0.16);
+
+  --status-queued-bg: #e5ebf0;
+  --status-queued-fg: #52616f;
+  --status-running-bg: #d8eef6;
+  --status-running-fg: #176b87;
+  --status-paused-bg: #fff1cf;
+  --status-paused-fg: #8a5a00;
+  --status-completed-bg: #dff3e6;
+  --status-completed-fg: #217a3e;
+  --status-failed-bg: #fae2e2;
+  --status-failed-fg: #b42318;
+  --status-cancelled-bg: #eceff2;
+  --status-cancelled-fg: #788692;
+
+  --danger: #b42318;
+  --danger-hover: #cc2c20;
+  --danger-soft: #fae2e2;
+
+  --warn-bg: #fff8e8;
+  --warn-border: #f3c96b;
+  --warn-fg: #7a5a16;
+
+  --highlight-flash: rgba(23, 107, 135, 0.16);
+  --skeleton-base: #e6ebf0;
+  --skeleton-sheen: #f3f6f9;
+}

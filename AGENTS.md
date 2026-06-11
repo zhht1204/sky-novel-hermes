@@ -95,6 +95,11 @@ Both adapters share the `packages/sites/src/quanben5` module and extract metadat
 - Prefer tool-style layouts with clear navigation, dense tables, status badges, and focused panels.
 - Avoid decorative card nesting and oversized hero sections.
 - Keep text readable and prevent layout shifts in queues, tables, and toolbars.
+- `docs/THEME.md` is the source of truth for the desktop visual design. Follow it for palette, tokens, components, motion/effects, and accessibility rules.
+- Design tokens live in `apps/desktop/src/theme.css`; layout/component styles in `apps/desktop/src/styles.css` must consume tokens via `var(--*)`. Do not hard-code color literals outside `theme.css`.
+- The app is dark-first with a light toggle in Settings, persisted in `localStorage` (`hermes-theme`) and applied via `document.documentElement[data-theme]` (bootstrapped inline in `index.html` to avoid theme flash).
+- Provide effect-driven feedback: toasts for action results, animated progress, pulsing running indicators, live row-flash on WebSocket updates, skeleton loaders during fetches, and view/hover/press transitions. Respect `prefers-reduced-motion`.
+- Reusable UI primitives live in `apps/desktop/src/ui/components` (`ui.tsx`, `toast.tsx`); each main view lives in its own file under `apps/desktop/src/ui/views`. When adding tokens, update both theme blocks in `theme.css` and `docs/THEME.md`.
 
 ## Testing
 
