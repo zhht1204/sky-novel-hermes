@@ -43,6 +43,8 @@ interface DatabaseDriver {
   upsertProofread(proofread: ChapterProofread): Promise<void>;
   getProofread(sourceUrl: string): Promise<ChapterProofread | undefined>;
   deleteProofread(sourceUrl: string): Promise<boolean>;
+  listProofreadsByTask(taskId: string): Promise<ChapterProofread[]>;
+  deleteProofreadsByTask(taskId: string): Promise<number>;
   upsertProofreadTask(task: ProofreadTask): Promise<void>;
   listProofreadTasks(): Promise<ProofreadTask[]>;
   upsertProofreadFailure(failure: ProofreadFailure): Promise<void>;
@@ -99,6 +101,8 @@ export class HermesDatabase implements DatabaseDriver {
   upsertProofread(proofread: ChapterProofread): Promise<void> { return this.driver.upsertProofread(proofread); }
   getProofread(sourceUrl: string): Promise<ChapterProofread | undefined> { return this.driver.getProofread(sourceUrl); }
   deleteProofread(sourceUrl: string): Promise<boolean> { return this.driver.deleteProofread(sourceUrl); }
+  listProofreadsByTask(taskId: string): Promise<ChapterProofread[]> { return this.driver.listProofreadsByTask(taskId); }
+  deleteProofreadsByTask(taskId: string): Promise<number> { return this.driver.deleteProofreadsByTask(taskId); }
   upsertProofreadTask(task: ProofreadTask): Promise<void> { return this.driver.upsertProofreadTask(task); }
   listProofreadTasks(): Promise<ProofreadTask[]> { return this.driver.listProofreadTasks(); }
   upsertProofreadFailure(failure: ProofreadFailure): Promise<void> { return this.driver.upsertProofreadFailure(failure); }
@@ -245,6 +249,7 @@ class SqliteDatabaseDriver implements DatabaseDriver {
         original_text text not null,
         corrected_text text not null,
         applied integer not null,
+        task_id text,
         model text not null,
         prompt_hash text not null,
         created_at text not null,
@@ -291,6 +296,14 @@ class SqliteDatabaseDriver implements DatabaseDriver {
         created_at text not null
       );
     `);
+    this.ensureColumn('chapter_proofreads', 'task_id', 'text');
+  }
+
+  private ensureColumn(table: string, column: string, definition: string): void {
+    const columns = this.db.prepare(`pragma table_info(${table})`).all() as Array<{ name: string }>;
+    if (!columns.some((entry) => entry.name === column)) {
+      this.db.exec(`alter table ${table} add column ${column} ${definition}`);
+    }
   }
 
   async close(): Promise<void> { this.db.close(); }
@@ -486,13 +499,14 @@ class SqliteDatabaseDriver implements DatabaseDriver {
 
   async upsertProofread(proofread: ChapterProofread): Promise<void> {
     this.db.prepare(`
-      insert into chapter_proofreads (source_url, book_url, chapter_index, title, original_text, corrected_text, applied, model, prompt_hash, created_at, updated_at)
-      values (@sourceUrl, @bookUrl, @chapterIndex, @title, @originalText, @correctedText, @applied, @model, @promptHash, @createdAt, @updatedAt)
+      insert into chapter_proofreads (source_url, book_url, chapter_index, title, original_text, corrected_text, applied, task_id, model, prompt_hash, created_at, updated_at)
+      values (@sourceUrl, @bookUrl, @chapterIndex, @title, @originalText, @correctedText, @applied, @taskId, @model, @promptHash, @createdAt, @updatedAt)
       on conflict(source_url) do update set
         title=excluded.title,
         original_text=excluded.original_text,
         corrected_text=excluded.corrected_text,
         applied=excluded.applied,
+        task_id=excluded.task_id,
         model=excluded.model,
         prompt_hash=excluded.prompt_hash,
         updated_at=excluded.updated_at
@@ -507,6 +521,16 @@ class SqliteDatabaseDriver implements DatabaseDriver {
   async deleteProofread(sourceUrl: string): Promise<boolean> {
     const result = this.db.prepare('delete from chapter_proofreads where source_url = ?').run(sourceUrl);
     return result.changes > 0;
+  }
+
+  async listProofreadsByTask(taskId: string): Promise<ChapterProofread[]> {
+    const rows = this.db.prepare('select * from chapter_proofreads where task_id = ?').all(taskId);
+    return rows.map(rowToProofread);
+  }
+
+  async deleteProofreadsByTask(taskId: string): Promise<number> {
+    const result = this.db.prepare('delete from chapter_proofreads where task_id = ?').run(taskId);
+    return result.changes;
   }
 
   async upsertProofreadTask(task: ProofreadTask): Promise<void> {
@@ -698,6 +722,7 @@ class PostgresDatabaseDriver implements DatabaseDriver {
         original_text text not null,
         corrected_text text not null,
         applied boolean not null,
+        task_id text,
         model text not null,
         prompt_hash text not null,
         created_at text not null,
@@ -744,6 +769,7 @@ class PostgresDatabaseDriver implements DatabaseDriver {
         created_at text not null
       );
     `);
+    await this.pool.query('alter table chapter_proofreads add column if not exists task_id text');
   }
 
   async close(): Promise<void> { await this.pool.end(); }
@@ -969,17 +995,18 @@ class PostgresDatabaseDriver implements DatabaseDriver {
 
   async upsertProofread(proofread: ChapterProofread): Promise<void> {
     await this.pool.query(`
-      insert into chapter_proofreads (source_url, book_url, chapter_index, title, original_text, corrected_text, applied, model, prompt_hash, created_at, updated_at)
-      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      insert into chapter_proofreads (source_url, book_url, chapter_index, title, original_text, corrected_text, applied, task_id, model, prompt_hash, created_at, updated_at)
+      values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
       on conflict(source_url) do update set
         title = excluded.title,
         original_text = excluded.original_text,
         corrected_text = excluded.corrected_text,
         applied = excluded.applied,
+        task_id = excluded.task_id,
         model = excluded.model,
         prompt_hash = excluded.prompt_hash,
         updated_at = excluded.updated_at
-    `, [proofread.sourceUrl, proofread.bookUrl, proofread.chapterIndex, proofread.title, proofread.originalText, proofread.correctedText, proofread.applied, proofread.model, proofread.promptHash, proofread.createdAt, proofread.updatedAt]);
+    `, [proofread.sourceUrl, proofread.bookUrl, proofread.chapterIndex, proofread.title, proofread.originalText, proofread.correctedText, proofread.applied, proofread.taskId ?? null, proofread.model, proofread.promptHash, proofread.createdAt, proofread.updatedAt]);
   }
 
   async getProofread(sourceUrl: string): Promise<ChapterProofread | undefined> {
@@ -991,6 +1018,16 @@ class PostgresDatabaseDriver implements DatabaseDriver {
   async deleteProofread(sourceUrl: string): Promise<boolean> {
     const result = await this.pool.query('delete from chapter_proofreads where source_url = $1', [sourceUrl]);
     return (result.rowCount ?? 0) > 0;
+  }
+
+  async listProofreadsByTask(taskId: string): Promise<ChapterProofread[]> {
+    const result = await this.pool.query('select * from chapter_proofreads where task_id = $1', [taskId]);
+    return result.rows.map(rowToProofread);
+  }
+
+  async deleteProofreadsByTask(taskId: string): Promise<number> {
+    const result = await this.pool.query('delete from chapter_proofreads where task_id = $1', [taskId]);
+    return result.rowCount ?? 0;
   }
 
   async upsertProofreadTask(task: ProofreadTask): Promise<void> {
@@ -1185,6 +1222,7 @@ function rowToProofread(row: QueryResultRow | any): ChapterProofread {
     originalText: row.original_text,
     correctedText: row.corrected_text,
     applied: Boolean(row.applied),
+    taskId: row.task_id ?? undefined,
     model: row.model,
     promptHash: row.prompt_hash,
     createdAt: row.created_at,
@@ -1282,6 +1320,7 @@ function proofreadToSqlParams(proofread: ChapterProofread) {
   return {
     ...proofread,
     applied: proofread.applied ? 1 : 0,
+    taskId: proofread.taskId ?? null,
   };
 }
 

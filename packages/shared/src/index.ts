@@ -205,6 +205,7 @@ export const ChapterProofreadSchema = z.object({
   originalText: z.string(),
   correctedText: z.string(),
   applied: z.boolean().default(false),
+  taskId: z.string().optional(),
   model: z.string(),
   promptHash: z.string(),
   createdAt: z.string(),

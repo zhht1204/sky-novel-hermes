@@ -11,8 +11,6 @@ export class ProofreadManager extends EventEmitter {
   private readonly activeTaskIds = new Set<string>();
   private readonly pauseRequestedTaskIds = new Set<string>();
   private readonly cancelRequestedTaskIds = new Set<string>();
-  // Chapters this task wrote proofread records for during its run(s), with whether repairs were applied.
-  private readonly writtenChaptersByTask = new Map<string, Map<string, boolean>>();
 
   constructor(private db: HermesDatabase, private readonly ai: LiteLlmClient, private readonly getSettings: () => ProofreadSettings) {
     super();
@@ -155,6 +153,7 @@ export class ProofreadManager extends EventEmitter {
             originalText: chapter.text,
             correctedText,
             applied: current.applyRepairs,
+            taskId: current.id,
             model: this.ai.model,
             promptHash: hashPrompt(settings.defaultPrompt),
             createdAt: existing?.createdAt ?? timestamp,
@@ -163,7 +162,6 @@ export class ProofreadManager extends EventEmitter {
           if (current.applyRepairs) {
             await this.db.upsertChapterContent({ ...chapter, text: correctedText, fetchedAt: chapter.fetchedAt || timestamp });
           }
-          this.trackWrittenChapter(current.id, chapter.sourceUrl, current.applyRepairs);
           await this.db.clearProofreadFailure(task.id, chapter.sourceUrl);
           current = { ...current, completedChapters: current.completedChapters + 1, updatedAt: nowIso(), message: chapter.title };
           await this.updateTask(current);
@@ -181,10 +179,8 @@ export class ProofreadManager extends EventEmitter {
         updatedAt: nowIso(),
         message: current.failedChapters > 0 ? `Completed with ${current.failedChapters} failed chapters` : 'Completed',
       });
-      this.writtenChaptersByTask.delete(task.id);
     } catch (error) {
       await this.updateTask({ ...current, status: 'failed', updatedAt: nowIso(), message: error instanceof Error ? error.message : String(error) });
-      this.writtenChaptersByTask.delete(task.id);
     } finally {
       this.activeTaskIds.delete(task.id);
     }
@@ -277,27 +273,16 @@ export class ProofreadManager extends EventEmitter {
     return false;
   }
 
-  private trackWrittenChapter(taskId: string, sourceUrl: string, applied: boolean): void {
-    const written = this.writtenChaptersByTask.get(taskId) ?? new Map<string, boolean>();
-    written.set(sourceUrl, applied);
-    this.writtenChaptersByTask.set(taskId, written);
-  }
-
   // Removes the proofread records this task produced; restores the original chapter text when repairs were applied.
   private async discardTaskResults(taskId: string): Promise<void> {
-    const written = this.writtenChaptersByTask.get(taskId);
-    if (!written) return;
-    for (const [sourceUrl, applied] of written) {
-      if (applied) {
-        const record = await this.db.getProofread(sourceUrl);
-        if (record) {
-          const chapter = await this.db.getChapter(sourceUrl);
-          if (chapter) await this.db.upsertChapterContent({ ...chapter, text: record.originalText });
-        }
+    const records = await this.db.listProofreadsByTask(taskId);
+    for (const record of records) {
+      if (record.applied) {
+        const chapter = await this.db.getChapter(record.sourceUrl);
+        if (chapter) await this.db.upsertChapterContent({ ...chapter, text: record.originalText });
       }
-      await this.db.deleteProofread(sourceUrl);
     }
-    this.writtenChaptersByTask.delete(taskId);
+    await this.db.deleteProofreadsByTask(taskId);
   }
 
   private isFreshActiveTask(task: ProofreadTask): boolean {

@@ -63,6 +63,7 @@ export interface ChapterProofread {
   originalText: string;
   correctedText: string;
   applied: boolean;
+  taskId?: string;
   model: string;
   promptHash: string;
   createdAt: string;
