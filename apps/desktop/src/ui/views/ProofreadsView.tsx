@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ClipboardCheck, Pause, Play, RotateCcw, X } from 'lucide-react';
 import { apiGet, apiPost } from '../../api.js';
 import type { BookInfo, ChapterProofread, ChapterRef, ProofreadFailure, ProofreadTask, ServiceSettings } from '../../types.js';
@@ -133,6 +133,23 @@ export function ProofreadsView({
   );
   const stats = useMemo(() => diffStats(diffSegments), [diffSegments]);
   const hasChanges = stats.changes > 0;
+  const originalSegments = useMemo(() => diffSegments.filter((seg) => seg.type !== 'insert'), [diffSegments]);
+  const correctedSegments = useMemo(() => diffSegments.filter((seg) => seg.type !== 'delete'), [diffSegments]);
+
+  const originalPaneRef = useRef<HTMLPreElement>(null);
+  const correctedPaneRef = useRef<HTMLPreElement>(null);
+  const syncingPaneRef = useRef<HTMLPreElement | null>(null);
+
+  function syncScroll(source: HTMLPreElement, target: HTMLPreElement | null) {
+    if (!target || syncingPaneRef.current === source) return;
+    syncingPaneRef.current = target;
+    const sourceRange = source.scrollHeight - source.clientHeight;
+    const targetRange = target.scrollHeight - target.clientHeight;
+    target.scrollTop = sourceRange > 0 ? (source.scrollTop / sourceRange) * targetRange : 0;
+    requestAnimationFrame(() => {
+      syncingPaneRef.current = null;
+    });
+  }
 
   return (
     <div className="stack">
@@ -319,11 +336,27 @@ export function ProofreadsView({
               <div className="readerCompare">
                 <article>
                   <header>原文</header>
-                  <pre>{proofread.originalText}</pre>
+                  <pre ref={originalPaneRef} onScroll={() => syncScroll(originalPaneRef.current!, correctedPaneRef.current)}>
+                    {hasChanges
+                      ? originalSegments.map((seg, index) => (
+                          <span key={index} className={seg.type === 'delete' ? 'diff-del' : undefined}>
+                            {seg.value}
+                          </span>
+                        ))
+                      : proofread.originalText}
+                  </pre>
                 </article>
                 <article>
                   <header>校对结果</header>
-                  <pre>{proofread.correctedText}</pre>
+                  <pre ref={correctedPaneRef} onScroll={() => syncScroll(correctedPaneRef.current!, originalPaneRef.current)}>
+                    {hasChanges
+                      ? correctedSegments.map((seg, index) => (
+                          <span key={index} className={seg.type === 'insert' ? 'diff-ins' : undefined}>
+                            {seg.value}
+                          </span>
+                        ))
+                      : proofread.correctedText}
+                  </pre>
                 </article>
               </div>
             )}

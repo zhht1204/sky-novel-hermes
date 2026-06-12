@@ -1104,6 +1104,17 @@ td.mono,
   text-decoration: line-through;
   border-radius: 2px;
 }
+.readerCompare .diff-ins {
+  background: var(--diff-ins-bg);
+  color: var(--diff-ins-fg);
+  border-radius: 2px;
+}
+.readerCompare .diff-del {
+  background: var(--diff-del-bg);
+  color: var(--diff-del-fg);
+  text-decoration: line-through;
+  border-radius: 2px;
+}
 
 /* ---------------- Toasts ---------------- */
 .toastViewport {
