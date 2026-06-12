@@ -68,6 +68,14 @@ Both adapters share the `packages/sites/src/quanben5` module and extract metadat
 - `pnpm build`
 - `pnpm --filter @sky-novel-hermes/desktop build:bundle` for installer/release bundle generation
 
+## Versioning
+
+- The app version is single-sourced and kept in sync across `package.json`, `apps/desktop/package.json`, `apps/node-service/package.json`, `apps/desktop/src-tauri/tauri.conf.json`, and `apps/desktop/src-tauri/Cargo.toml`.
+- Run `pnpm version:bump` to raise the version (default `+0.0.1`); pass a `MAJOR.MINOR.PATCH` delta (e.g. `node scripts/bump-version.mjs 0.1.0`), `--major`/`--minor`/`--patch`, or `--set X.Y.Z` for an exact version.
+- The bump script (`scripts/bump-version.mjs`) updates all version fields, commits the change as `chore: release vX.Y.Z`, and creates the `vX.Y.Z` git tag. Use `--no-commit`, `--no-tag`, or `--dry-run` to opt out. Pushing the tag is manual (`git push origin vX.Y.Z`).
+- The desktop frontend reads the version from `apps/desktop/package.json` via the Vite `__APP_VERSION__` define and shows it in the Settings “关于” panel; keep that wiring intact when changing the build config.
+- When bumping versions or changing the version workflow, keep this file and the version-bearing files above aligned.
+
 ## Release Automation
 
 - GitHub Actions release packaging lives in `.github/workflows/release.yml`.

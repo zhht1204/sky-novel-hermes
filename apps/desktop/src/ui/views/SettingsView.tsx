@@ -50,6 +50,14 @@ export function SettingsView({ theme, setTheme }: { theme: Theme; setTheme: (the
         <p className="muted">主题选择会保存在本地，下次启动时自动应用。</p>
       </Panel>
 
+      <Panel title="关于">
+        <div className="formRow">
+          <span>应用版本</span>
+          <span className="mono">v{__APP_VERSION__}</span>
+        </div>
+        <p className="muted">使用 <code>pnpm version:bump</code> 升级版本号并打 git tag（默认 +0.0.1）。</p>
+      </Panel>
+
       {!settings ? (
         <Panel title="服务设置">
           <p>{message || '正在读取设置...'}</p>

@@ -14,7 +14,8 @@
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",
-    "lint": "pnpm -r lint"
+    "lint": "pnpm -r lint",
+    "version:bump": "node scripts/bump-version.mjs"
   },
   "devDependencies": {
     "@types/node": "^22.15.30",
