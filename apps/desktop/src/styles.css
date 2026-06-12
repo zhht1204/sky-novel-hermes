@@ -1024,6 +1024,87 @@ td.mono,
   max-height: 68vh;
 }
 
+/* ---------------- Proofread diff ---------------- */
+.proofreadResult {
+  margin-top: var(--space-4);
+}
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.segmented button {
+  border: none;
+  background: var(--bg-raised);
+  color: var(--text-secondary);
+  padding: var(--space-2) var(--space-3);
+  font-size: var(--fs-sm);
+  cursor: pointer;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+.segmented button + button {
+  border-left: 1px solid var(--border);
+}
+.segmented button:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.segmented button.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+.diffSummary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+  color: var(--text-secondary);
+  font-size: var(--fs-sm);
+}
+.diffSummary-chip {
+  padding: 1px var(--space-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-sunken);
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+}
+.diffSummary-changes {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.diffSummary-add {
+  background: var(--diff-ins-bg);
+  color: var(--diff-ins-fg);
+}
+.diffSummary-del {
+  background: var(--diff-del-bg);
+  color: var(--diff-del-fg);
+}
+.diffView {
+  white-space: pre-wrap;
+  line-height: 1.85;
+  font-family: var(--font-sans);
+  font-size: var(--fs-md);
+  color: var(--text-primary);
+  max-height: 68vh;
+  overflow: auto;
+  margin: 0;
+}
+.diffView .diff-ins {
+  background: var(--diff-ins-bg);
+  color: var(--diff-ins-fg);
+  border-radius: 2px;
+}
+.diffView .diff-del {
+  background: var(--diff-del-bg);
+  color: var(--diff-del-fg);
+  text-decoration: line-through;
+  border-radius: 2px;
+}
+
 /* ---------------- Toasts ---------------- */
 .toastViewport {
   position: fixed;

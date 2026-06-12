@@ -50,6 +50,7 @@ color tokens are themed under `:root, :root[data-theme="dark"]` and
 | Danger | `--danger`, `--danger-hover`, `--danger-soft` |
 | Warning | `--warn-bg`, `--warn-border`, `--warn-fg` |
 | Effects | `--highlight-flash`, `--skeleton-base`, `--skeleton-sheen` |
+| Diff (bg/fg pairs) | `--diff-ins-bg`, `--diff-ins-fg`, `--diff-del-bg`, `--diff-del-fg` |
 
 ## Component guidelines
 

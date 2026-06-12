@@ -1,9 +1,10 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ClipboardCheck, Pause, Play, RotateCcw, X } from 'lucide-react';
 import { apiGet, apiPost } from '../../api.js';
 import type { BookInfo, ChapterProofread, ChapterRef, ProofreadFailure, ProofreadTask, ServiceSettings } from '../../types.js';
 import { Button, EmptyState, Panel, ProgressBar, StatusBadge } from '../components/ui.js';
 import { useToast } from '../components/toast.js';
+import { buildInlineDiff, diffStats } from '../diff.js';
 
 export function ProofreadsView({
   books,
@@ -31,6 +32,7 @@ export function ProofreadsView({
   const [chapterRefs, setChapterRefs] = useState<ChapterRef[]>([]);
   const [selectedChapterUrl, setSelectedChapterUrl] = useState('');
   const [proofread, setProofread] = useState<ChapterProofread | undefined>();
+  const [compareMode, setCompareMode] = useState<'diff' | 'split'>('diff');
 
   useEffect(() => {
     apiGet<ServiceSettings>('/api/settings').then(setSettings).catch((error) => setMessage(error.message));
@@ -124,6 +126,13 @@ export function ProofreadsView({
   }
 
   const bookTasks = tasks.filter((task) => !selectedBookUrl || task.bookUrl === selectedBookUrl);
+
+  const diffSegments = useMemo(
+    () => (proofread ? buildInlineDiff(proofread.originalText, proofread.correctedText) : []),
+    [proofread],
+  );
+  const stats = useMemo(() => diffStats(diffSegments), [diffSegments]);
+  const hasChanges = stats.changes > 0;
 
   return (
     <div className="stack">
@@ -255,17 +264,69 @@ export function ProofreadsView({
             <RotateCcw size={14} />
             重新校对本章
           </Button>
+          {proofread && (
+            <div className="segmented" role="group" aria-label="对照模式">
+              <button
+                type="button"
+                className={compareMode === 'diff' ? 'active' : ''}
+                onClick={() => setCompareMode('diff')}
+              >
+                差异标记
+              </button>
+              <button
+                type="button"
+                className={compareMode === 'split' ? 'active' : ''}
+                onClick={() => setCompareMode('split')}
+              >
+                左右对照
+              </button>
+            </div>
+          )}
         </div>
         {proofread ? (
-          <div className="readerCompare">
-            <article>
-              <header>原文</header>
-              <pre>{proofread.originalText}</pre>
-            </article>
-            <article>
-              <header>校对结果</header>
-              <pre>{proofread.correctedText}</pre>
-            </article>
+          <div className="proofreadResult">
+            <div className="diffSummary">
+              <StatusBadge status={proofread.applied ? 'completed' : 'queued'} />
+              <span>{proofread.applied ? '已写回正文' : '未写回正文'}</span>
+              {hasChanges ? (
+                <>
+                  <span className="diffSummary-chip diffSummary-changes">{stats.changes} 处改动</span>
+                  <span className="diffSummary-chip diffSummary-add">+{stats.added} 字</span>
+                  <span className="diffSummary-chip diffSummary-del">-{stats.removed} 字</span>
+                </>
+              ) : (
+                <span className="diffSummary-chip">AI 未改动本章内容</span>
+              )}
+            </div>
+            {compareMode === 'diff' ? (
+              <pre className="diffView">
+                {hasChanges ? (
+                  diffSegments.map((seg, index) => (
+                    <span
+                      key={index}
+                      className={
+                        seg.type === 'insert' ? 'diff-ins' : seg.type === 'delete' ? 'diff-del' : undefined
+                      }
+                    >
+                      {seg.value}
+                    </span>
+                  ))
+                ) : (
+                  proofread.correctedText
+                )}
+              </pre>
+            ) : (
+              <div className="readerCompare">
+                <article>
+                  <header>原文</header>
+                  <pre>{proofread.originalText}</pre>
+                </article>
+                <article>
+                  <header>校对结果</header>
+                  <pre>{proofread.correctedText}</pre>
+                </article>
+              </div>
+            )}
           </div>
         ) : (
           <pre className="reader-placeholder">选择章节后查看已保存的校对对照。</pre>

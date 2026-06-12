@@ -98,6 +98,11 @@
   --highlight-flash: rgba(60, 178, 216, 0.26);
   --skeleton-base: #1c232c;
   --skeleton-sheen: #2a333e;
+
+  --diff-ins-bg: rgba(46, 160, 87, 0.22);
+  --diff-ins-fg: #6ee79f;
+  --diff-del-bg: rgba(229, 83, 75, 0.22);
+  --diff-del-fg: #f3a39d;
 }
 
 /* ---------- Light theme ---------- */
@@ -155,4 +160,9 @@
   --highlight-flash: rgba(23, 107, 135, 0.16);
   --skeleton-base: #e6ebf0;
   --skeleton-sheen: #f3f6f9;
+
+  --diff-ins-bg: #d3f3df;
+  --diff-ins-fg: #1a6b34;
+  --diff-del-bg: #fbdcda;
+  --diff-del-fg: #a01c12;
 }
