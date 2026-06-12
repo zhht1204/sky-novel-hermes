@@ -42,6 +42,7 @@ interface DatabaseDriver {
   clearTranslationFailures(taskId: string): Promise<void>;
   upsertProofread(proofread: ChapterProofread): Promise<void>;
   getProofread(sourceUrl: string): Promise<ChapterProofread | undefined>;
+  deleteProofread(sourceUrl: string): Promise<boolean>;
   upsertProofreadTask(task: ProofreadTask): Promise<void>;
   listProofreadTasks(): Promise<ProofreadTask[]>;
   upsertProofreadFailure(failure: ProofreadFailure): Promise<void>;
@@ -97,6 +98,7 @@ export class HermesDatabase implements DatabaseDriver {
   clearTranslationFailures(taskId: string): Promise<void> { return this.driver.clearTranslationFailures(taskId); }
   upsertProofread(proofread: ChapterProofread): Promise<void> { return this.driver.upsertProofread(proofread); }
   getProofread(sourceUrl: string): Promise<ChapterProofread | undefined> { return this.driver.getProofread(sourceUrl); }
+  deleteProofread(sourceUrl: string): Promise<boolean> { return this.driver.deleteProofread(sourceUrl); }
   upsertProofreadTask(task: ProofreadTask): Promise<void> { return this.driver.upsertProofreadTask(task); }
   listProofreadTasks(): Promise<ProofreadTask[]> { return this.driver.listProofreadTasks(); }
   upsertProofreadFailure(failure: ProofreadFailure): Promise<void> { return this.driver.upsertProofreadFailure(failure); }
@@ -500,6 +502,11 @@ class SqliteDatabaseDriver implements DatabaseDriver {
   async getProofread(sourceUrl: string): Promise<ChapterProofread | undefined> {
     const row = this.db.prepare('select * from chapter_proofreads where source_url = ?').get(sourceUrl);
     return row ? rowToProofread(row) : undefined;
+  }
+
+  async deleteProofread(sourceUrl: string): Promise<boolean> {
+    const result = this.db.prepare('delete from chapter_proofreads where source_url = ?').run(sourceUrl);
+    return result.changes > 0;
   }
 
   async upsertProofreadTask(task: ProofreadTask): Promise<void> {
@@ -979,6 +986,11 @@ class PostgresDatabaseDriver implements DatabaseDriver {
     const result = await this.pool.query('select * from chapter_proofreads where source_url = $1', [sourceUrl]);
     const row = result.rows[0];
     return row ? rowToProofread(row) : undefined;
+  }
+
+  async deleteProofread(sourceUrl: string): Promise<boolean> {
+    const result = await this.pool.query('delete from chapter_proofreads where source_url = $1', [sourceUrl]);
+    return (result.rowCount ?? 0) > 0;
   }
 
   async upsertProofreadTask(task: ProofreadTask): Promise<void> {
