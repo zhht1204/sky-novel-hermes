@@ -1,6 +1,6 @@
 [package]
 name = "sky-novel-hermes"
-version = "0.1.0"
+version = "0.1.1"
 description = "Novel download management desktop app"
 authors = ["Sky Novel Hermes"]
 edition = "2021"
