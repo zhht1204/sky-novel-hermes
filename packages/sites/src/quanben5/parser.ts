@@ -1,5 +1,5 @@
 import * as cheerio from 'cheerio';
-import type { BookInfo, ChapterContent, ChapterRef } from '@sky-novel-hermes/shared';
+import type { BookInfo, ChapterContent, ChapterRef, SearchResult } from '@sky-novel-hermes/shared';
 import { nowIso } from '@sky-novel-hermes/shared';
 import { absolutizeUrl, normalizeWhitespace } from '../http.js';
 import { QUANBEN5_BIG5, selectors, type Quanben5SourceConfig } from './selectors.js';
@@ -55,6 +55,35 @@ function extractDescription($: cheerio.CheerioAPI, title: string): string | unde
     .map((element) => normalizeWhitespace($(element).text()))
     .filter((text) => text.length > 40 && !text.includes('當前位置') && !text.includes('当前位置') && !text.includes(title));
   return candidates[0];
+}
+
+export function parseSearchResults(html: string, baseUrl: string, source: Quanben5SourceConfig = QUANBEN5_BIG5, limit?: number): SearchResult[] {
+  const $ = cheerio.load(html);
+  const results: SearchResult[] = [];
+
+  $(selectors.searchResultItem).each((_, element) => {
+    if (limit !== undefined && results.length >= limit) return;
+    const item = $(element);
+    const link = item.find(selectors.searchResultLink).first();
+    const href = link.attr('href');
+    const title = normalizeWhitespace(link.find(selectors.searchResultName).text()) || normalizeWhitespace(link.text());
+    if (!href || !title) return;
+
+    const author = normalizeWhitespace(item.find(selectors.searchResultAuthor).first().text()) || undefined;
+    const descriptionNode = item.find(selectors.searchResultDescription).first().clone();
+    descriptionNode.find(selectors.searchResultReadIcon).remove();
+    const description = normalizeWhitespace(descriptionNode.text()) || undefined;
+
+    results.push({
+      siteId: source.id,
+      title,
+      author,
+      url: absolutizeUrl(baseUrl, href),
+      description,
+    });
+  });
+
+  return results;
 }
 
 export function parseCatalog(html: string, bookUrl: string, source: Quanben5SourceConfig = QUANBEN5_BIG5): ChapterRef[] {

@@ -3,8 +3,8 @@ import { nowIso } from '@sky-novel-hermes/shared';
 import type { BrowserProvider } from '../browser/browserProvider.js';
 import { CloakBrowserProvider } from '../browser/browserProvider.js';
 import { fetchText } from '../http.js';
-import { parseBookInfo, parseCatalog, parseChapter } from './parser.js';
-import { QUANBEN5_BIG5, QUANBEN5_SIMPLIFIED, type Quanben5SourceConfig } from './selectors.js';
+import { parseBookInfo, parseCatalog, parseChapter, parseSearchResults } from './parser.js';
+import { QUANBEN5_BIG5, QUANBEN5_SIMPLIFIED, SEARCH_OBFUSCATION_CHARS, type Quanben5SourceConfig } from './selectors.js';
 
 export class Quanben5SiteAdapter implements NovelSiteAdapter {
   readonly capabilities: SiteCapability[] = ['connection-check', 'search', 'book-info', 'catalog', 'chapter-content'];
@@ -49,16 +49,24 @@ export class Quanben5SiteAdapter implements NovelSiteAdapter {
   }
 
   async search(query: SearchQuery): Promise<SearchResult[]> {
-    const searchUrl = new URL('/index.php', this.baseUrl);
-    searchUrl.searchParams.set('c', 'search');
-    searchUrl.searchParams.set('keyword', query.keyword);
-    const { text } = await this.fetchHtml(searchUrl.toString());
-    const catalog = parseCatalog(text, this.baseUrl, this.source).slice(0, query.limit);
-    return catalog.map((chapter) => ({
-      siteId: this.id,
-      title: chapter.title,
-      url: chapter.sourceUrl,
-    }));
+    const encodedKeyword = encodeURI(query.keyword);
+    const obfuscated = encodeURI(obfuscateKeyword(encodedKeyword));
+    const params = new URLSearchParams({
+      c: 'book',
+      a: 'search.json',
+      callback: 'search',
+      t: String(Date.now()),
+      keywords: query.keyword,
+    });
+    // The obfuscated `b` value mirrors the site's client encoding and must be sent
+    // unescaped (its `%` markers are not standard percent-encoding).
+    const searchUrl = `${this.baseUrl}/?${params.toString()}&b=${obfuscated}`;
+    const { text } = await this.fetchHtml(searchUrl, {
+      headers: { referer: `${this.baseUrl}/search.html` },
+    });
+    const content = extractJsonpContent(text);
+    if (!content) return [];
+    return parseSearchResults(content, this.baseUrl, this.source, query.limit);
   }
 
   async getBookInfo(input: BookInfoInput) {
@@ -82,8 +90,8 @@ export class Quanben5SiteAdapter implements NovelSiteAdapter {
     return parseChapter(rendered, input.bookUrl, input.chapterUrl, this.source);
   }
 
-  private async fetchHtml(url: string): Promise<{ text: string; status: number }> {
-    return fetchText(url);
+  private async fetchHtml(url: string, options?: { headers?: Record<string, string> }): Promise<{ text: string; status: number }> {
+    return fetchText(url, options);
   }
 
   private async renderHtml(url: string): Promise<string> {
@@ -95,6 +103,37 @@ export class Quanben5SiteAdapter implements NovelSiteAdapter {
     } finally {
       await browser.close();
     }
+  }
+}
+
+/**
+ * Mirrors the site's client-side keyword obfuscation: each character is shifted
+ * three positions within the static table (unknown characters are kept as-is)
+ * and wrapped between two random padding characters.
+ */
+function obfuscateKeyword(value: string): string {
+  const table = SEARCH_OBFUSCATION_CHARS;
+  let encoded = '';
+  for (const char of value) {
+    const index = table.indexOf(char);
+    const code = index === -1 ? char : table[(index + 3) % table.length];
+    const left = table[Math.floor(Math.random() * table.length)];
+    const right = table[Math.floor(Math.random() * table.length)];
+    encoded += `${left}${code}${right}`;
+  }
+  return encoded;
+}
+
+/** Extracts the JSON payload from a `callback({ ... })` JSONP response. */
+function extractJsonpContent(text: string): string | undefined {
+  const start = text.indexOf('(');
+  const end = text.lastIndexOf(')');
+  if (start === -1 || end <= start) return undefined;
+  try {
+    const data = JSON.parse(text.slice(start + 1, end)) as { content?: unknown };
+    return typeof data.content === 'string' ? data.content : undefined;
+  } catch {
+    return undefined;
   }
 }
 
